@@ -1,0 +1,10 @@
+[package]
+name = "catalyst_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy_ecs = { workspace = true }
+rayon = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true }

@@ -1,0 +1,23 @@
+# Filename: Cargo.toml
+[workspace]
+resolver = "2"
+members = [
+    "crates/catalyst_core",
+    "crates/catalyst_app",
+    "crates/catalyst_window", "crates/catalyst_renderer"
+]
+
+[workspace.dependencies]
+# This section ensures all crates use the SAME versions of libraries
+winit = "0.30.12"
+log = "0.4"
+env_logger = "0.11"
+nalgebra = "0.34"
+bevy_ecs = "0.17"
+rayon = "1.10"
+tokio = { version = "1.47.1", features = ["full"] }
+async-trait = "0.1.89"
+
+# Internal dependencies
+catalyst_core = { path = "crates/catalyst_core" }
+catalyst_window = { path = "crates/catalyst_window" }

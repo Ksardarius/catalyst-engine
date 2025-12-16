@@ -1,0 +1,9 @@
+[package]
+name = "catalyst_window"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+catalyst_core = { workspace = true }
+winit = { workspace = true }
+log = { workspace = true }

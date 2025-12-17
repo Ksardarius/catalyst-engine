@@ -8,3 +8,4 @@ bevy_ecs = { workspace = true }
 rayon = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }
+glam = { workspace = true }

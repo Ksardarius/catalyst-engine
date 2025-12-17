@@ -8,15 +8,19 @@ use winit::{
 
 pub struct MainWindow(pub Window);
 
-// 1. Define a Wrapper Resource for the Window
-// We use a wrapper because 'Window' is not Thread-Safe (Send),
-// so it must be a "NonSend" resource in Bevy ECS terms.
-// #[derive(Default)]
-pub struct MainApp(App);
+// The State Machine that holds the App while waiting for the OS
+struct CatalystRunner {
+    app: App,
+    // We keep track if we have started the engine yet
+    initialized: bool,
+}
 
-impl MainApp {
+impl CatalystRunner {
     pub fn new(app: App) -> Self {
-        Self(app)
+        Self {
+            app,
+            initialized: false,
+        }
     }
 }
 
@@ -28,17 +32,22 @@ impl Plugin for WindowPlugin {
     }
 }
 
-impl ApplicationHandler for MainApp {
+impl ApplicationHandler for CatalystRunner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        self.0.world.insert_non_send_resource(MainWindow(
+        self.app.world.insert_non_send_resource(MainWindow(
             event_loop
                 .create_window(Window::default_attributes().with_title("Catalyst Engine"))
                 .unwrap(),
         ));
+
+        if !self.initialized {
+            self.app.startup();
+            self.initialized = true;
+        }
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        self.0.world.non_send_resource::<MainWindow>().0.request_redraw();
+        self.app.world.non_send_resource::<MainWindow>().0.request_redraw();
     }
 
     fn window_event(
@@ -53,7 +62,7 @@ impl ApplicationHandler for MainApp {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                self.0.update();
+                self.app.update();
                 // Redraw the application.
                 //
                 // It's preferable for applications that do not render continuously to render in
@@ -81,9 +90,7 @@ pub fn run_catalyst_app(mut app: App) {
     // dispatched any events. This is ideal for games and similar applications.
     event_loop.set_control_flow(ControlFlow::Poll);
 
-    app.startup();
-
-    let mut main_window = MainApp::new(app);
+    let mut main_window = CatalystRunner::new(app);
 
     event_loop.run_app(&mut main_window).unwrap();
 }

@@ -8,5 +8,9 @@ catalyst_core = { workspace = true }
 catalyst_window = { workspace = true } # We need access to window types
 wgpu = "27.0"  # The graphics API
 log = { workspace = true }
+bevy_ecs = { workspace = true }
+glam = { workspace = true }
+
 # We need async executor to init the adapter
 pollster = "0.4"
+bytemuck = "1.24"

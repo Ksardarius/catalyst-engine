@@ -5,6 +5,12 @@ pub use rayon;
 
 use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
 
+pub mod transform;
+pub mod camera;
+pub mod assets;
+
+pub use assets::*;
+
 // --- 1. THE MESSAGE PROTOCOL ---
 // What can the background threads say to the main thread?
 #[derive(Message)]

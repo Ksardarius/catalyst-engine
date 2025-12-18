@@ -1,7 +1,7 @@
-use catalyst_core::{App, Plugin};
+use catalyst_core::{App, Input, Plugin, time::Time};
 use winit::{
     application::ApplicationHandler,
-    event::WindowEvent,
+    event::{ElementState, KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
@@ -47,7 +47,11 @@ impl ApplicationHandler for CatalystRunner {
     }
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        self.app.world.non_send_resource::<MainWindow>().0.request_redraw();
+        self.app
+            .world
+            .non_send_resource::<MainWindow>()
+            .0
+            .request_redraw();
     }
 
     fn window_event(
@@ -57,26 +61,39 @@ impl ApplicationHandler for CatalystRunner {
         event: WindowEvent,
     ) {
         match event {
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: winit::keyboard::PhysicalKey::Code(code),
+                        state,
+                        ..
+                    },
+                ..
+            } => {
+                let mut input = self.app.world.resource_mut::<Input>();
+
+                match state {
+                    ElementState::Pressed => input.press(code),
+                    ElementState::Released => input.release(code),
+                }
+            }
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
+                // 1. Tick the Clock manually
+                if let Some(mut time) = self.app.world.get_resource_mut::<Time>() {
+                    time.update();
+                }
+
+                // 2. Run the Systems
                 self.app.update();
-                // Redraw the application.
-                //
-                // It's preferable for applications that do not render continuously to render in
-                // this event rather than in AboutToWait, since rendering in here allows
-                // the program to gracefully handle redraws requested by the OS.
 
-                // Draw.
-
-                // Queue a RedrawRequested event.
-                //
-                // You only need to call this if you've determined that you need to redraw in
-                // applications which do not always need to. Applications that redraw continuously
-                // can render here instead.
-                // self.0.as_ref().unwrap().request_redraw();
+                // 3. Request next frame
+                if let Some(window_res) = self.app.world.get_non_send_resource::<MainWindow>() {
+                    window_res.0.request_redraw();
+                }
             }
             _ => (),
         }

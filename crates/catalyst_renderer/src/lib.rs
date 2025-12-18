@@ -11,6 +11,9 @@ use crate::{
 
 pub mod global_uniform;
 pub mod mesh;
+mod texture;
+
+use texture::TextureHelper;
 
 #[derive(Resource)]
 pub struct LayoutResource(pub wgpu::BindGroupLayout);
@@ -23,7 +26,11 @@ pub struct RenderContext {
     pub surface: Surface<'static>,
     pub config: SurfaceConfiguration,
     pub pipeline: wgpu::RenderPipeline,
+    pub depth_texture: wgpu::TextureView,
+
     pub vertex_buffers: HashMap<u64, wgpu::Buffer>,
+    pub index_buffers: HashMap<u64, wgpu::Buffer>,
+    pub index_counts: HashMap<u64, u32>,
 }
 
 pub struct RenderPlugin;
@@ -90,6 +97,8 @@ fn init_wgpu(world: &mut World) {
 
     let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
+    let depth_texture = TextureHelper::create_depth_texture(&device, &config, "Depth Texture");
+
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Uniform Bind Group Layout"),
         entries: &[wgpu::BindGroupLayoutEntry {
@@ -132,6 +141,13 @@ fn init_wgpu(world: &mut World) {
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: TextureHelper::DEPTH_FORMAT,
+            depth_write_enabled: true,                  // Write Z-values
+            depth_compare: wgpu::CompareFunction::Less, // Closer pixels win
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
@@ -142,7 +158,6 @@ fn init_wgpu(world: &mut World) {
             unclipped_depth: false,
             conservative: false,
         },
-        depth_stencil: None, // No depth buffer yet
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
     });
@@ -156,7 +171,10 @@ fn init_wgpu(world: &mut World) {
         surface,
         config,
         pipeline,
+        depth_texture,
         vertex_buffers: HashMap::new(),
+        index_buffers: HashMap::new(),
+        index_counts: HashMap::new(),
     });
 
     world.insert_resource(LayoutResource(bind_group_layout));
@@ -217,6 +235,27 @@ fn render_frame(
                             });
 
                     context.vertex_buffers.insert(id, buffer);
+
+                    let index_buffer =
+                        context
+                            .device
+                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("Index Buffer"),
+                                contents: bytemuck::cast_slice(&mesh_data.indices),
+                                usage: wgpu::BufferUsages::INDEX,
+                            });
+
+                    context.index_buffers.insert(id, index_buffer);
+                    context
+                        .index_counts
+                        .insert(id, mesh_data.indices.len() as u32);
+
+                    println!(
+                        ">>> GPU: Uploaded Mesh ID {} (V: {}, I: {})",
+                        id,
+                        mesh_data.vertices.len(),
+                        mesh_data.indices.len()
+                    );
                 }
             }
         }
@@ -247,7 +286,14 @@ fn render_frame(
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: &context.depth_texture, // The texture we created
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0), // Clear to "Far" (1.0)
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
         });
@@ -259,56 +305,63 @@ fn render_frame(
         for (mesh_handle_component, mesh_transform) in &mesh_query {
             let id = mesh_handle_component.0.id;
 
-            if let Some(gpu_buffer) = context.vertex_buffers.get(&id) {
-                // 2. Calculate Final Matrix (MVP)
-                // Model Matrix: Where the object is
-                let model_matrix = mesh_transform.compute_matrix();
-                // Final = Camera * Model
-                let mvp_matrix = camera_matrix * model_matrix;
+            if let Some(v_buffer) = context.vertex_buffers.get(&id) {
+                if let Some(i_buffer) = context.index_buffers.get(&id) {
+                    let index_count = context.index_counts.get(&id).unwrap();
 
-                // 3. Create Uniform Buffer (Direct Upload)
-                // Note: In production, create this ONCE per entity, not every frame.
-                let uniform_data = GlobalUniform {
-                    transform_matrix: mvp_matrix,
-                };
+                    // 2. Calculate Final Matrix (MVP)
+                    // Model Matrix: Where the object is
+                    let model_matrix = mesh_transform.compute_matrix();
+                    // Final = Camera * Model
+                    let mvp_matrix = camera_matrix * model_matrix;
 
-                // 1. Create a temporary buffer for this mesh (The "Direct" way)
-                // In a pro engine, this buffer lives in a Component, not created every frame.
-                use wgpu::util::DeviceExt;
+                    // 3. Create Uniform Buffer (Direct Upload)
+                    // Note: In production, create this ONCE per entity, not every frame.
+                    let uniform_data = GlobalUniform {
+                        transform_matrix: mvp_matrix,
+                    };
 
-                let uniform_buffer =
-                    context
+                    // 1. Create a temporary buffer for this mesh (The "Direct" way)
+                    // In a pro engine, this buffer lives in a Component, not created every frame.
+                    use wgpu::util::DeviceExt;
+
+                    let uniform_buffer =
+                        context
+                            .device
+                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                                label: Some("Uniform Buffer"),
+                                contents: bytemuck::bytes_of(&uniform_data),
+                                usage: wgpu::BufferUsages::UNIFORM,
+                            });
+
+                    // 4. Create Bind Group
+                    // This connects the buffer to the shader slot 0
+                    let bind_group = context
                         .device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Uniform Buffer"),
-                            contents: bytemuck::bytes_of(&uniform_data),
-                            usage: wgpu::BufferUsages::UNIFORM,
+                        .create_bind_group(&wgpu::BindGroupDescriptor {
+                            label: Some("Transform Bind Group"),
+                            layout: &layout.0,
+                            entries: &[wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: uniform_buffer.as_entire_binding(),
+                            }],
                         });
 
-                // 4. Create Bind Group
-                // This connects the buffer to the shader slot 0
-                let bind_group = context
-                    .device
-                    .create_bind_group(&wgpu::BindGroupDescriptor {
-                        label: Some("Transform Bind Group"),
-                        layout: &layout.0,
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: uniform_buffer.as_entire_binding(),
-                        }],
-                    });
+                    // 5. Draw
+                    render_pass.set_bind_group(0, &bind_group, &[]);
 
-                // 5. Draw
-                render_pass.set_bind_group(0, &bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, v_buffer.slice(..));
 
-                render_pass.set_vertex_buffer(0, gpu_buffer.slice(..));
+                    // NEW: Bind Index Buffer
+                    // We use Uint32 because our Vec<u32> is 32-bit
+                    render_pass.set_index_buffer(i_buffer.slice(..), wgpu::IndexFormat::Uint32);
 
-                // We need to know the count. 
-                // Since we don't have the MeshData here easily without locking again, 
-                // we should probably store vertex_count in the Cache or MeshData handle.
-                // Hack for now: Ask the buffer size (size / stride)
-                let count = gpu_buffer.size() as u32 / std::mem::size_of::<Vertex>() as u32;
-                render_pass.draw(0..count, 0..1);
+                    // We need to know the count.
+                    // Since we don't have the MeshData here easily without locking again,
+                    // we should probably store vertex_count in the Cache or MeshData handle.
+                    // Hack for now: Ask the buffer size (size / stride)
+                    render_pass.draw_indexed(0..*index_count, 0, 0..1);
+                }
             }
         }
     } // Pass ends here (release lock)

@@ -34,6 +34,7 @@ impl Vertex {
 // 1. Rename the old Mesh struct to "MeshData" (The heavy part)
 pub struct MeshData {
     pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>
 }
 
 // 2. The Component is now just a Handle!

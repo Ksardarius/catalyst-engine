@@ -8,8 +8,13 @@ use tokio::sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel};
 pub mod transform;
 pub mod camera;
 pub mod assets;
+pub mod input;
+pub mod time;
 
 pub use assets::*;
+pub use input::*;
+
+use crate::time::Time;
 
 // --- 1. THE MESSAGE PROTOCOL ---
 // What can the background threads say to the main thread?
@@ -74,6 +79,8 @@ impl App {
 
         // Register the Event Type so systems can read it
         world.init_resource::<Messages<EngineEvent>>();
+        world.init_resource::<Input>();
+        world.init_resource::<Time>();
 
         let mut main_schedule = Schedule::default();
 

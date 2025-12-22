@@ -1,5 +1,8 @@
+use std::mem;
+
 use bytemuck::{Pod, Zeroable};
-use catalyst_core::{Component, Handle};
+use catalyst_assets::assets::{Handle, MeshData};
+use catalyst_core::{Component};
 
 // 1. The GPU-Compatible Vertex
 // #[repr(C)] ensures C-like memory layout (needed for graphics drivers)
@@ -7,7 +10,8 @@ use catalyst_core::{Component, Handle};
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3], // X, Y, Z
-    pub color: [f32; 3],    // R, G, B
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
 }
 
 impl Vertex {
@@ -22,20 +26,25 @@ impl Vertex {
                     format: wgpu::VertexFormat::Float32x3, // position
                 },
                 wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1, // @location(1) in shader
-                    format: wgpu::VertexFormat::Float32x3, // color
+                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: (mem::size_of::<[f32; 3]>() * 2) as wgpu::BufferAddress,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
             ],
         }
     }
 }
 
-// 1. Rename the old Mesh struct to "MeshData" (The heavy part)
-pub struct MeshData {
-    pub vertices: Vec<Vertex>,
-    pub indices: Vec<u32>
-}
+// // 1. Rename the old Mesh struct to "MeshData" (The heavy part)
+// pub struct MeshData {
+//     pub vertices: Vec<Vertex>,
+//     pub indices: Vec<u32>
+// }
 
 // 2. The Component is now just a Handle!
 #[derive(Component, Clone)]

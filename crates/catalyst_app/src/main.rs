@@ -1,8 +1,9 @@
+use catalyst_assets::{AssetPlugin, asset_server::AssetServer};
 // Component to track a heavy calculation
 use catalyst_core::{camera::Camera, time::Time, transform::Transform, *};
 use catalyst_renderer::{
     RenderPlugin,
-    mesh::{Mesh, MeshData, Vertex},
+    mesh::{Mesh},
 };
 use catalyst_window::{WindowPlugin, run_catalyst_app};
 use glam::{Quat, Vec3};
@@ -15,97 +16,42 @@ fn main() {
 
     app.add_plugin(WindowPlugin);
     app.add_plugin(RenderPlugin);
+    app.add_plugin(AssetPlugin);
 
     // Spawn the Triangle
-    app.add_startup_system(setup_3d_scene);
+    app.add_startup_system(setup_scene);
 
-    // 1. SETUP: Define reactions
-    app.add_system(handle_asset_loaded);
-    app.add_system(rotate_triangle);
+    app.add_system(spin_model);
     app.add_system(move_camera);
 
-    // 2. ACTION: Spawn Async Task
-    println!("Main: Spawning Async Request...");
-    app.spawn_io(|sender| async move {
-        println!("    [Tokio] Downloading 'texture.png'...");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
-        // Send the result back!
-        let _ = sender.0.send(EngineEvent::AssetLoaded {
-            name: "texture.png".to_string(),
-            data: vec![0, 255, 0, 255],
-        });
-        println!("    [Tokio] Sent 'AssetLoaded' event.");
-    });
-
     run_catalyst_app(app)
-
-    // 3. LOOP
-    // app.startup_schedule.run(&mut app.world);
-
-    // for i in 0..10 {
-    //     app.main_schedule.run(&mut app.world);
-    //     std::thread::sleep(std::time::Duration::from_millis(200));
-    // }
 }
 
-fn setup_3d_scene(mut commands: Commands, mut mesh_assets: ResMut<Assets<MeshData>>) {
-    // Define a Quad (Rectangle) reusing vertices!
-    let quad_handle = mesh_assets.add(MeshData {
-        vertices: vec![
-            // 0: Top Left (Red)
-            Vertex {
-                position: [-0.5, 0.5, 0.0],
-                color: [1.0, 0.0, 0.0],
-            },
-            // 1: Top Right (Green)
-            Vertex {
-                position: [0.5, 0.5, 0.0],
-                color: [0.0, 1.0, 0.0],
-            },
-            // 2: Bottom Left (Blue)
-            Vertex {
-                position: [-0.5, -0.5, 0.0],
-                color: [0.0, 0.0, 1.0],
-            },
-            // 3: Bottom Right (Yellow)
-            Vertex {
-                position: [0.5, -0.5, 0.0],
-                color: [1.0, 1.0, 0.0],
-            },
-        ],
-        // The Magic: We define 2 triangles pointing to the 4 vertices above
-        indices: vec![
-            0, 1, 2, // Triangle 1 (Top-Left, Top-Right, Bottom-Left)
-            1, 3, 2, // Triangle 2 (Top-Right, Bottom-Right, Bottom-Left)
-        ],
-    });
+/// -------------------------------------------------------------------
+/// SYSTEM: Setup Scene
+/// -------------------------------------------------------------------
+fn setup_scene(mut commands: Commands, asset_server: Res<AssetServer>) {
+    println!("Requesting Mesh Load...");
+    let mesh_handle = asset_server.load_mesh("assets/monkey.obj");
 
-    commands.spawn((Camera::default(), Transform::from_xyz(0.0, 0.0, 3.0)));
+    // B. Spawn the Mesh Entity
+    commands.spawn((
+        Mesh(mesh_handle),       // The Render Component
+        Transform::from_xyz(0.0, 0.0, 0.0), // Position at center
+    ));
 
-    // Spawn the Quad
-    commands.spawn((Mesh(quad_handle), Transform::default()));
+    // C. Spawn the Camera
+    commands.spawn((
+        Camera::default(),
+        Transform::from_xyz(0.0, 2.0, 5.0) // Up 2, Back 5
+            .looking_at(Vec3::ZERO, Vec3::Y), // Look at center
+    ));
 }
 
 fn rotate_triangle(mut query: Query<(&mut Transform, &Mesh)>) {
     for (mut transform, _) in &mut query {
         // Rotate around Z axis (Spinning)
         transform.rotation *= Quat::from_rotation_y(0.02);
-    }
-}
-
-fn handle_asset_loaded(mut events: MessageReader<EngineEvent>) {
-    for event in events.read() {
-        match event {
-            EngineEvent::AssetLoaded { name, data } => {
-                println!(
-                    "  [ECS System] WOW! Received '{}' size: {}",
-                    name,
-                    data.len()
-                );
-            }
-            _ => {}
-        }
     }
 }
 
@@ -140,5 +86,18 @@ fn move_camera(
         if input.is_pressed(KeyCode::ShiftLeft) {
             transform.position -= up * speed;
         }
+    }
+}
+
+/// -------------------------------------------------------------------
+/// SYSTEM: Spin Model
+/// -------------------------------------------------------------------
+fn spin_model(
+    time: Res<Time>,
+    mut query: Query<&mut Transform, With<Mesh>>,
+) {
+    for mut transform in &mut query {
+        // Rotate 45 degrees per second around Y axis
+        transform.rotate_y(1.0 * time.delta_seconds());
     }
 }

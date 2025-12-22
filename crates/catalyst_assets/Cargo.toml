@@ -1,15 +1,12 @@
 [package]
-name = "catalyst_core"
+name = "catalyst_assets"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-tobj = "4.0"
-
 bevy_ecs = { workspace = true }
-rayon = { workspace = true }
-log = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
-glam = { workspace = true }
-winit = { workspace = true }
 uuid = { workspace = true }
+tobj = "4.0"
+catalyst_core = { workspace = true }

@@ -8,6 +8,7 @@ bevy_ecs = { workspace = true }
 catalyst_core = { workspace = true }
 catalyst_window = { workspace = true }
 catalyst_renderer = { workspace = true }
+catalyst_assets = { workspace = true }
 env_logger = { workspace = true }
 tokio = { workspace = true }
 rayon = { workspace = true }

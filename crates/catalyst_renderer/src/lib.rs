@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 
+use catalyst_assets::{
+    AssetEvent,
+    assets::{Assets, Handle, MeshData},
+};
 use catalyst_core::{camera::Camera, transform::Transform, *};
 use catalyst_window::MainWindow;
-use wgpu::{Device, Queue, Surface, SurfaceConfiguration};
+use glam::{Mat4, Vec3};
+use uuid::Uuid;
+use wgpu::{Device, Queue, Surface, SurfaceConfiguration, util::DeviceExt};
 
-use crate::{
-    global_uniform::GlobalUniform,
-    mesh::{Mesh, MeshData, Vertex},
-};
+use crate::mesh::{Mesh, Vertex};
 
 pub mod global_uniform;
 pub mod mesh;
@@ -28,21 +31,19 @@ pub struct RenderContext {
     pub pipeline: wgpu::RenderPipeline,
     pub depth_texture: wgpu::TextureView,
 
-    pub vertex_buffers: HashMap<u64, wgpu::Buffer>,
-    pub index_buffers: HashMap<u64, wgpu::Buffer>,
-    pub index_counts: HashMap<u64, u32>,
+    pub vertex_buffers: HashMap<Uuid, wgpu::Buffer>,
+    pub index_buffers: HashMap<Uuid, wgpu::Buffer>,
+    pub index_counts: HashMap<Uuid, u32>,
 }
 
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
-        // 1. Initialize the Asset Bank for Meshes
-        // We use "init_resource" which calls Default::default()
-        app.world.init_resource::<Assets<MeshData>>();
-
         // 1. Setup: Connect to GPU (Runs once at startup)
         app.add_startup_system(init_wgpu);
+
+        app.add_system(prepare_gpu_assets);
 
         // 2. Draw: Clear the screen (Runs every frame)
         app.add_system(render_frame);
@@ -183,83 +184,53 @@ fn init_wgpu(world: &mut World) {
 // --- SYSTEM 2: RENDERING ---
 fn render_frame(
     mut context: ResMut<RenderContext>,
-    layout: Res<LayoutResource>,
-    mesh_assets: Res<Assets<MeshData>>,
+    layout_res: Res<LayoutResource>,
     // We query for the Camera separately
-    camera_query: Query<(&Camera, &Transform), With<Camera>>,
+    camera_q: Query<(&Camera, &Transform)>,
     // We query for Objects
-    mesh_query: Query<(&Mesh, &Transform), Without<Camera>>,
+    mesh_q: Query<(&Mesh, &Transform), Without<Camera>>,
 ) {
     // 1. Get the next frame texture from the swapchain
-    let frame = match context.surface.get_current_texture() {
-        Ok(frame) => frame,
-        Err(wgpu::SurfaceError::Outdated) => {
-            // Reconfigure if resized (skip for now)
+    let output = match context.surface.get_current_texture() {
+        Ok(texture) => texture,
+        Err(wgpu::SurfaceError::Lost) => {
+            // Surface lost (e.g., window minimized), reconfigure next frame
+            context.surface.configure(&context.device, &context.config);
             return;
         }
-        Err(_) => return,
+        Err(e) => {
+            eprintln!("Render error: {:?}", e);
+            return;
+        }
     };
 
-    let view = frame
+    let view = output
         .texture
         .create_view(&wgpu::TextureViewDescriptor::default());
 
     // 1. Calculate Camera Matrix (View * Projection)
-    let (camera, cam_transform) = match camera_query.single() {
-        Ok(c) => c,
-        Err(_) => return, // No camera? Don't draw.
+    let (view_proj, camera_pos) = if let Ok((_cam, cam_t)) = camera_q.single() {
+        // A: View Matrix (Inverse of Camera Transform)
+        // Move the world opposite to the camera
+        let view = Mat4::look_at_rh(
+            cam_t.position,                               // Eye
+            cam_t.position + (cam_t.rotation * -Vec3::Z), // Target (Forward is -Z)
+            Vec3::Y,                                      // Up
+        );
+
+        // B: Projection Matrix (Perspective)
+        let aspect = context.config.width as f32 / context.config.height as f32;
+        let proj = Mat4::perspective_rh(
+            45.0f32.to_radians(), // FOV
+            aspect,
+            0.1,   // Near Plane
+            100.0, // Far Plane
+        );
+
+        (proj * view, cam_t.position)
+    } else {
+        (Mat4::IDENTITY, Vec3::ZERO)
     };
-
-    let projection = camera.compute_projection_matrix();
-    // View Matrix is the INVERSE of the Camera's Transform
-    let view_matrix = cam_transform.compute_matrix().inverse();
-    let camera_matrix = projection * view_matrix;
-
-    mesh_assets.with_storage(|storage| {
-        for (mesh_handle_component, _) in &mesh_query {
-            let id = mesh_handle_component.0.id;
-
-            // If cache doesn't have it, AND asset storage has data -> UPLOAD
-            if !context.vertex_buffers.contains_key(&id) {
-                if let Some(mesh_data) = storage.get(&id) {
-                    println!(">>> GPU: Uploading Mesh ID {} (One-time) <<<", id);
-
-                    use wgpu::util::DeviceExt;
-                    let buffer =
-                        context
-                            .device
-                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                                label: Some("Cached Vertex Buffer"),
-                                contents: bytemuck::cast_slice(&mesh_data.vertices),
-                                usage: wgpu::BufferUsages::VERTEX,
-                            });
-
-                    context.vertex_buffers.insert(id, buffer);
-
-                    let index_buffer =
-                        context
-                            .device
-                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                                label: Some("Index Buffer"),
-                                contents: bytemuck::cast_slice(&mesh_data.indices),
-                                usage: wgpu::BufferUsages::INDEX,
-                            });
-
-                    context.index_buffers.insert(id, index_buffer);
-                    context
-                        .index_counts
-                        .insert(id, mesh_data.indices.len() as u32);
-
-                    println!(
-                        ">>> GPU: Uploaded Mesh ID {} (V: {}, I: {})",
-                        id,
-                        mesh_data.vertices.len(),
-                        mesh_data.indices.len()
-                    );
-                }
-            }
-        }
-    });
 
     // 2. Create a Command Encoder
     let mut encoder = context
@@ -294,79 +265,124 @@ fn render_frame(
                 }),
                 stencil_ops: None,
             }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
+            ..Default::default()
         });
 
         // Use our pipeline
         render_pass.set_pipeline(&context.pipeline);
 
         // ITERATE OVER ECS ENTITIES
-        for (mesh_handle_component, mesh_transform) in &mesh_query {
-            let id = mesh_handle_component.0.id;
+        for (mesh_comp, transform) in &mesh_q {
+            let mesh_id = mesh_comp.0.id;
 
-            if let Some(v_buffer) = context.vertex_buffers.get(&id) {
-                if let Some(i_buffer) = context.index_buffers.get(&id) {
-                    let index_count = context.index_counts.get(&id).unwrap();
+            if let (Some(v_buf), Some(i_buf), Some(index_count)) = (
+                context.vertex_buffers.get(&mesh_id),
+                context.index_buffers.get(&mesh_id),
+                context.index_counts.get(&mesh_id),
+            ) {
+                // A. Calculate MVP Matrix (Model-View-Projection)
+                // Model: Local -> World
+                let model_matrix =
+                    Mat4::from_rotation_translation(transform.rotation, transform.position);
 
-                    // 2. Calculate Final Matrix (MVP)
-                    // Model Matrix: Where the object is
-                    let model_matrix = mesh_transform.compute_matrix();
-                    // Final = Camera * Model
-                    let mvp_matrix = camera_matrix * model_matrix;
+                // Final Matrix: Local -> Clip Space
+                let mvp_matrix = view_proj * model_matrix;
 
-                    // 3. Create Uniform Buffer (Direct Upload)
-                    // Note: In production, create this ONCE per entity, not every frame.
-                    let uniform_data = GlobalUniform {
-                        transform_matrix: mvp_matrix,
-                    };
-
-                    // 1. Create a temporary buffer for this mesh (The "Direct" way)
-                    // In a pro engine, this buffer lives in a Component, not created every frame.
-                    use wgpu::util::DeviceExt;
-
-                    let uniform_buffer =
-                        context
-                            .device
-                            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                                label: Some("Uniform Buffer"),
-                                contents: bytemuck::bytes_of(&uniform_data),
-                                usage: wgpu::BufferUsages::UNIFORM,
-                            });
-
-                    // 4. Create Bind Group
-                    // This connects the buffer to the shader slot 0
-                    let bind_group = context
+                // B. Create Uniform Buffer for THIS object
+                // (Note: For 1000s of objects, use DynamicUniformBuffer. For now, this is fine.)
+                let mvp_ref = mvp_matrix.to_cols_array_2d();
+                let uniform_buffer =
+                    context
                         .device
-                        .create_bind_group(&wgpu::BindGroupDescriptor {
-                            label: Some("Transform Bind Group"),
-                            layout: &layout.0,
-                            entries: &[wgpu::BindGroupEntry {
-                                binding: 0,
-                                resource: uniform_buffer.as_entire_binding(),
-                            }],
+                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                            label: Some("Uniform Buffer"),
+                            contents: bytemuck::cast_slice(&[mvp_ref]), // cast [[f32;4];4] to bytes
+                            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                         });
 
-                    // 5. Draw
-                    render_pass.set_bind_group(0, &bind_group, &[]);
+                // C. Create Bind Group
+                let bind_group = context
+                    .device
+                    .create_bind_group(&wgpu::BindGroupDescriptor {
+                        layout: &layout_res.0,
+                        entries: &[wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: uniform_buffer.as_entire_binding(),
+                        }],
+                        label: Some("Object Bind Group"),
+                    });
 
-                    render_pass.set_vertex_buffer(0, v_buffer.slice(..));
-
-                    // NEW: Bind Index Buffer
-                    // We use Uint32 because our Vec<u32> is 32-bit
-                    render_pass.set_index_buffer(i_buffer.slice(..), wgpu::IndexFormat::Uint32);
-
-                    // We need to know the count.
-                    // Since we don't have the MeshData here easily without locking again,
-                    // we should probably store vertex_count in the Cache or MeshData handle.
-                    // Hack for now: Ask the buffer size (size / stride)
-                    render_pass.draw_indexed(0..*index_count, 0, 0..1);
-                }
+                // D. Draw!
+                render_pass.set_bind_group(0, &bind_group, &[]);
+                render_pass.set_vertex_buffer(0, v_buf.slice(..));
+                render_pass.set_index_buffer(i_buf.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..*index_count, 0, 0..1);
             }
         }
     } // Pass ends here (release lock)
 
     // 4. Submit to GPU
     context.queue.submit(std::iter::once(encoder.finish()));
-    frame.present();
+    output.present();
+}
+
+fn prepare_gpu_assets(
+    mut context: ResMut<RenderContext>,
+    mut events: MessageReader<AssetEvent>,
+    assets: Res<Assets<MeshData>>, // Read CPU data
+) {
+    for event in events.read() {
+        let AssetEvent::MeshLoaded { id, .. } = event;
+        let handle = Handle::<MeshData>::from_id(*id);
+
+        if let Some(mesh_data) = assets.get(&handle) {
+            println!(">>> GPU: Uploading Mesh {:?}", id);
+
+            let (v_buf, i_buf, count) = create_gpu_buffer(&context.device, &mesh_data);
+
+            // 3. Store in the Context Cache
+            context.vertex_buffers.insert(*id, v_buf);
+            context.index_buffers.insert(*id, i_buf);
+            context.index_counts.insert(*id, count);
+        }
+    }
+}
+
+fn create_gpu_buffer(device: &wgpu::Device, data: &MeshData) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+    // 1. Interleave Data (SoA -> AoS)
+    // We combine pos, normal, uv into a single 'Vertex' struct list
+    let vertex_count = data.positions.len() / 3;
+    let mut vertices = Vec::with_capacity(vertex_count);
+
+    for i in 0..vertex_count {
+        vertices.push(Vertex {
+            position: [
+                data.positions[i * 3],
+                data.positions[i * 3 + 1],
+                data.positions[i * 3 + 2],
+            ],
+            normal: [
+                data.normals[i * 3],
+                data.normals[i * 3 + 1],
+                data.normals[i * 3 + 2],
+            ],
+            uv: [data.uvs[i * 2], data.uvs[i * 2 + 1]],
+        });
+    }
+
+    use wgpu::util::DeviceExt;
+
+    let v_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Mesh Vertex Buffer"),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
+    let i_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Mesh Index Buffer"),
+        contents: bytemuck::cast_slice(&data.indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+
+    (v_buffer, i_buffer, data.indices.len() as u32)
 }

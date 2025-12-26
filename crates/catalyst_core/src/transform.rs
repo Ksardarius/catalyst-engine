@@ -3,7 +3,7 @@ use glam::{Vec3, Quat, Mat4};
 
 #[derive(Component, Debug, Clone, Copy)]
 pub struct Transform {
-    pub position: Vec3,
+    pub translation: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
 }
@@ -11,7 +11,7 @@ pub struct Transform {
 impl Default for Transform {
     fn default() -> Self {
         Self {
-            position: Vec3::ZERO,
+            translation: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
         }
@@ -21,7 +21,7 @@ impl Default for Transform {
 impl Transform {
     pub fn from_xyz(x: f32, y: f32, z: f32) -> Self {
         Self {
-            position: Vec3::new(x, y, z),
+            translation: Vec3::new(x, y, z),
             ..Default::default()
         }
     }
@@ -50,10 +50,10 @@ impl Transform {
         // We look from 'position' to 'target'
         // Note: Mat4::look_at_rh creates a View Matrix (inverse transform).
         // For an object Transform, we want the rotation that points -Z towards target.
-        let forward = (target - self.position).normalize();
+        let forward = (target - self.translation).normalize();
         // Custom look_at logic for object rotation
         // Or simplified: use Mat4 to extract Quat
-        let mat = Mat4::look_at_rh(self.position, target, up);
+        let mat = Mat4::look_at_rh(self.translation, target, up);
         // Invert because look_at moves the world, but we want to move the object
         self.rotation = Quat::from_mat4(&mat.inverse());
         self
@@ -67,7 +67,7 @@ impl Transform {
         Mat4::from_scale_rotation_translation(
             self.scale,
             self.rotation,
-            self.position,
+            self.translation,
         )
     }
 

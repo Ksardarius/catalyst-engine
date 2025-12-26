@@ -75,9 +75,14 @@ impl<T: Send + Sync + 'static> Assets<T> {
 }
 
 #[derive(Debug)]
+pub struct Vertex {
+    pub position: [f32; 3], // Flat lists are easier for generic loaders
+    pub normal: [f32; 3],
+    pub uv: [f32; 2],
+}
+
+#[derive(Debug)]
 pub struct MeshData {
-    pub positions: Vec<f32>, // Flat lists are easier for generic loaders
-    pub normals: Vec<f32>,
-    pub uvs: Vec<f32>,
+    pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
 }

@@ -8,5 +8,7 @@ bevy_ecs = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }
-tobj = "4.0"
+image = "0.25"
+gltf = "1.0"
+glam = { workspace = true }
 catalyst_core = { workspace = true }

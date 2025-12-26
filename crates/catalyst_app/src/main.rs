@@ -1,10 +1,11 @@
-use catalyst_assets::{AssetPlugin, asset_server::AssetServer};
+use catalyst_assets::{AssetPlugin, asset_server::AssetServer, assets::Handle, scene::SceneData};
 // Component to track a heavy calculation
 use catalyst_core::{camera::Camera, time::Time, transform::Transform, *};
 use catalyst_renderer::{
     RenderPlugin,
     mesh::{Mesh},
 };
+use catalyst_scene::ScenePlugin;
 use catalyst_window::{WindowPlugin, run_catalyst_app};
 use glam::{Quat, Vec3};
 
@@ -17,6 +18,7 @@ fn main() {
     app.add_plugin(WindowPlugin);
     app.add_plugin(RenderPlugin);
     app.add_plugin(AssetPlugin);
+    app.add_plugin(ScenePlugin);
 
     // Spawn the Triangle
     app.add_startup_system(setup_scene);
@@ -27,18 +29,29 @@ fn main() {
     run_catalyst_app(app)
 }
 
+#[derive(Component)]
+pub struct SceneRoot(pub Handle<SceneData>);
+
 /// -------------------------------------------------------------------
 /// SYSTEM: Setup Scene
 /// -------------------------------------------------------------------
 fn setup_scene(mut commands: Commands, asset_server: Res<AssetServer>) {
     println!("Requesting Mesh Load...");
-    let mesh_handle = asset_server.load_mesh("assets/monkey.obj");
+    // let mesh_handle = asset_server.load_mesh("assets/monkey.obj");
 
     // B. Spawn the Mesh Entity
-    commands.spawn((
-        Mesh(mesh_handle),       // The Render Component
-        Transform::from_xyz(0.0, 0.0, 0.0), // Position at center
-    ));
+    // commands.spawn((
+    //     Mesh(mesh_handle),       // The Render Component
+    //     Transform::from_xyz(0.0, 0.0, 0.0), // Position at center
+    // ));
+
+    let scene_handle = asset_server.load_scene("assets/scene1.glb");
+    commands.spawn(catalyst_scene::SceneRoot(scene_handle));
+
+    // commands.spawn((
+    //     SceneRoot(asset_server.load_scene("assets/scene1.glb")),
+    //     Transform::default(),
+    // ));
 
     // C. Spawn the Camera
     commands.spawn((
@@ -69,22 +82,22 @@ fn move_camera(
         let up = Vec3::Y; // Global Up
 
         if input.is_pressed(KeyCode::KeyW) {
-            transform.position += forward * speed;
+            transform.translation += forward * speed;
         }
         if input.is_pressed(KeyCode::KeyS) {
-            transform.position -= forward * speed;
+            transform.translation -= forward * speed;
         }
         if input.is_pressed(KeyCode::KeyA) {
-            transform.position -= right * speed;
+            transform.translation -= right * speed;
         }
         if input.is_pressed(KeyCode::KeyD) {
-            transform.position += right * speed;
+            transform.translation += right * speed;
         }
         if input.is_pressed(KeyCode::Space) {
-            transform.position += up * speed;
+            transform.translation += up * speed;
         }
         if input.is_pressed(KeyCode::ShiftLeft) {
-            transform.position -= up * speed;
+            transform.translation -= up * speed;
         }
     }
 }

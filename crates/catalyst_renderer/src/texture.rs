@@ -1,4 +1,76 @@
-use wgpu::{Device, Extent3d, Texture, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, SurfaceConfiguration};
+use catalyst_assets::material::TextureData;
+use wgpu::{Device, Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, SurfaceConfiguration};
+
+pub struct GpuTexture {
+    pub texture: wgpu::Texture,
+    pub view: wgpu::TextureView,
+    pub sampler: wgpu::Sampler,
+}
+
+impl GpuTexture {
+    pub fn from_image(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        data: &TextureData,
+        label: Option<&str>
+    ) -> Self {
+        let wgpu_format = match data.format {
+            catalyst_assets::material::TextureFormat::Rgba8Unorm => wgpu::TextureFormat::Rgba8UnormSrgb,
+            catalyst_assets::material::TextureFormat::Rgba32Float => wgpu::TextureFormat::Rgba32Float,
+            catalyst_assets::material::TextureFormat::Gray8 => wgpu::TextureFormat::R8Unorm,
+        };
+
+        let size = wgpu::Extent3d {
+            width: data.width,
+            height: data.height,
+            depth_or_array_layers: 1,
+        };
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label,
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu_format, // Use the translated format
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+
+        // 2. Upload Pixels
+        queue.write_texture(
+            // RENAMED: ImageCopyTexture -> TexelCopyTextureInfo
+            wgpu::TexelCopyTextureInfo { 
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &data.pixels,
+            // RENAMED: ImageDataLayout -> TexelCopyBufferLayout
+            wgpu::TexelCopyBufferLayout { 
+                offset: 0,
+                bytes_per_row: Some(4 * data.width),
+                rows_per_image: Some(data.height),
+            },
+            size,
+        );
+
+        // 3. Create View (How the shader sees it)
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // 4. Create Sampler (How to filter pixels - Linear/Nearest)
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::Repeat, // Wrap texture
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,      // Smooth close up
+            min_filter: wgpu::FilterMode::Linear,      // Smooth far away
+            ..Default::default()
+        });
+
+        Self { texture, view, sampler }
+    }
+}
 
 pub struct TextureHelper;
 

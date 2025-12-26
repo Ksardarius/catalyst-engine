@@ -1,0 +1,164 @@
+use std::path::Path;
+
+use catalyst_core::transform::Transform;
+use glam::Quat;
+
+use crate::{assets::{Handle, MeshData, Vertex}, material::{MaterialData, MaterialSettings, TextureData, TextureFormat}, scene::SceneData};
+
+type GltfPayload = (
+    SceneData, 
+    Vec<(Handle<TextureData>, TextureData)>, 
+    Vec<(Handle<MaterialData>, MaterialData)>, 
+    Vec<(Handle<MeshData>, MeshData)>
+);
+
+pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
+    let base_path = Path::new(path).parent().unwrap_or(Path::new("./"));
+
+    // A. Load Document & Buffers
+    let (document, buffers, images) = gltf::import(path).map_err(|e| e.to_string())?;
+
+    // --- STEP 1: TEXTURES ---
+    let mut texture_artifacts = Vec::new();
+    let mut texture_map = Vec::new(); // Maps GLTF Image Index -> Our Handle
+
+    for data in images {
+        // Convert GLTF Image to our format
+        // Note: gltf::import automatically decodes PNG/JPG bytes into pixels for us!
+        let tex_data = TextureData {
+            width: data.width,
+            height: data.height,
+            pixels: data.pixels, // Raw RGBA bytes
+            format: TextureFormat::Rgba8Unorm, // GLTF is almost always RGBA8
+        };
+        
+        let handle = Handle::<TextureData>::new();
+        texture_artifacts.push((handle.clone(), tex_data));
+        texture_map.push(handle);
+    }
+
+    // --- STEP 2: MATERIALS ---
+    let mut material_artifacts = Vec::new();
+    let mut material_map = Vec::new();
+
+    for mat in document.materials() {
+        let pbr = mat.pbr_metallic_roughness();
+        
+        // 1. Resolve Texture Handle
+        let diffuse_handle = pbr.base_color_texture()
+            .map(|info| {
+                let idx = info.texture().source().index();
+                texture_map[idx].clone() // <--- The Link!
+            });
+
+        // 2. Build Material Data
+        let mat_data = MaterialData {
+            settings: MaterialSettings {
+                base_color: pbr.base_color_factor(),
+                roughness: pbr.roughness_factor(),
+                metallic: pbr.metallic_factor(),
+            },
+            diffuse_texture: diffuse_handle,
+            // For now, we skip Normal/Metallic maps to keep it simple.
+            // You can add them later using the same pattern.
+            normal_texture: None,
+            metallic_roughness_texture: None,
+            occlusion_texture: None,
+        };
+
+        let handle = Handle::<MaterialData>::new();
+        material_artifacts.push((handle.clone(), mat_data));
+        material_map.push(handle);
+    }
+
+    // --- STEP 3: MESHES ---
+    let mut mesh_artifacts = Vec::new();
+    let mut mesh_map = Vec::new(); // Maps GLTF Mesh Index -> Our Handle
+
+    for mesh in document.meshes() {
+        for primitive in mesh.primitives() {
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+
+            // Extract Positions
+            let positions: Vec<[f32; 3]> = reader.read_positions()
+                .map(|iter| iter.collect())
+                .ok_or("Mesh missing positions")?;
+
+            // Extract Normals (or generate default up-vector)
+            let normals: Vec<[f32; 3]> = reader.read_normals()
+                .map(|iter| iter.collect())
+                .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
+
+            // Extract UVs (or 0.0)
+            let uvs: Vec<[f32; 2]> = reader.read_tex_coords(0)
+                .map(|read| read.into_f32().collect())
+                .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+
+            // Extract Indices
+            let indices: Vec<u32> = reader.read_indices()
+                .map(|read| read.into_u32().collect())
+                .ok_or("Mesh missing indices")?;
+
+            // Interleave vertices (Position + Normal + UV)
+            let mut vertices = Vec::new();
+            for i in 0..positions.len() {
+                vertices.push(Vertex {
+                    position: positions[i],
+                    normal: normals[i],
+                    uv: uvs[i],
+                });
+            }
+
+            let mesh_data = MeshData { vertices, indices };
+            let handle = Handle::<MeshData>::new();
+            
+            mesh_artifacts.push((handle.clone(), mesh_data));
+            
+            // Note: GLTF Meshes can have multiple "Primitives". 
+            // We are simplifying and assuming 1 primitive per mesh for this tutorial.
+            // A robust engine would split these into multiple sub-meshes.
+            mesh_map.push(handle); 
+        }
+    }
+
+    // --- STEP 4: NODES (The Hierarchy) ---
+    let mut scene_nodes = Vec::new();
+
+    for node in document.nodes() {
+        // Position/Rotation/Scale
+        let (t, r, s) = node.transform().decomposed();
+        
+        let transform = Transform {
+            translation: t.into(),
+            rotation: Quat::from_array(r),
+            scale: s.into(),
+        };
+
+        // Link to Mesh
+        let mesh_index = node.mesh().map(|m| m.index());
+        
+        // Link to Material
+        // In GLTF, materials are assigned to Mesh Primitives, not Nodes directly.
+        // We look up the material used by the mesh's first primitive.
+        let material_index = node.mesh()
+            .and_then(|m| m.primitives().next())
+            .and_then(|p| p.material().index());
+
+        scene_nodes.push(crate::scene::SceneNode {
+            name: node.name().unwrap_or("Node").to_string(),
+            transform,
+            mesh_index,
+            material_index,
+            children: node.children().map(|c| c.index()).collect(),
+        });
+    }
+
+    let scene_data = SceneData {
+        nodes: scene_nodes,
+        textures: texture_map,
+        materials: material_map,
+        meshes: mesh_map,
+    };
+
+    Ok((scene_data, texture_artifacts, material_artifacts, mesh_artifacts))
+}

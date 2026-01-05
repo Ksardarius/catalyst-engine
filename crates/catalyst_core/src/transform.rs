@@ -1,19 +1,21 @@
-use bevy_ecs::component::Component;
-use glam::{Vec3, Quat, Mat4};
+use bevy_ecs::prelude::*;
+use bevy_reflect::Reflect;
+use glam::{Mat4, Quat, Vec3};
 
-#[derive(Component, Debug, Clone, Copy)]
+#[derive(Component, Clone, Copy, Debug)]
 pub struct Transform {
-    pub translation: Vec3,
-    pub rotation: Quat,
-    pub scale: Vec3,
+    pub translation: glam::Vec3,
+    pub rotation: glam::Quat,
+    pub scale: glam::Vec3,
 }
 
+// Optimization: We assume identity default to save branches
 impl Default for Transform {
     fn default() -> Self {
         Self {
-            translation: Vec3::ZERO,
-            rotation: Quat::IDENTITY,
-            scale: Vec3::ONE,
+            translation: glam::Vec3::ZERO,
+            rotation: glam::Quat::IDENTITY,
+            scale: glam::Vec3::ONE,
         }
     }
 }
@@ -64,11 +66,7 @@ impl Transform {
     /// Creates the Model Matrix (Local -> World)
     /// This is what we send to the GPU Uniform Buffer
     pub fn compute_matrix(&self) -> Mat4 {
-        Mat4::from_scale_rotation_translation(
-            self.scale,
-            self.rotation,
-            self.translation,
-        )
+        Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.translation)
     }
 
     // --- Directions (Useful for Movement) ---
@@ -86,5 +84,96 @@ impl Transform {
     /// Returns the "Up" direction (+Y) relative to current rotation
     pub fn up(&self) -> Vec3 {
         self.rotation * Vec3::Y
+    }
+}
+
+#[derive(Component, Clone, Copy, Debug, Default, Reflect)]
+#[reflect(Component)]
+pub struct GlobalTransform(pub Mat4);
+
+impl GlobalTransform {
+    /// Extracts the scale, rotation, and translation from the transformation matrix.
+    pub fn to_scale_rotation_translation(&self) -> (Vec3, Quat, Vec3) {
+        // We access the inner Mat4 using .0
+        self.0.to_scale_rotation_translation()
+    }
+}
+
+pub fn transform_propagation_system(
+    // 1. changed_roots: Roots that moved THIS frame
+    // Roots are entities WITHOUT a 'ChildOf' component
+    changed_roots: Query<
+        (Entity, &Transform, Option<&Children>),
+        (Without<ChildOf>, Changed<Transform>), // <--- CHANGED
+    >,
+
+    // 2. changed_children: Children who moved relative to parent THIS frame
+    changed_local: Query<
+        (Entity, &ChildOf, &Transform, Option<&Children>), // <--- CHANGED
+        (With<ChildOf>, Changed<Transform>),               // <--- CHANGED
+    >,
+
+    // 3. Random access to read/write globals
+    mut global_transforms: Query<&mut GlobalTransform>,
+
+    // 4. Hierarchy query
+    hierarchy_query: Query<(&Transform, Option<&Children>)>,
+) {
+    // A. Handle Roots
+    for (entity, transform, children) in changed_roots.iter() {
+        let matrix = transform.compute_matrix();
+
+        if let Ok(mut global) = global_transforms.get_mut(entity) {
+            global.0 = matrix;
+        }
+
+        if let Some(children) = children {
+            propagate_recursive(matrix, children, &hierarchy_query, &mut global_transforms);
+        }
+    }
+
+    // B. Handle Children (Local Updates)
+    for (entity, parent, transform, children) in changed_local.iter() {
+        // 'parent' is now of type '&ChildOf'.
+        // We use parent.get() or **parent to get the Entity ID.
+        if let Ok(parent_global) = global_transforms.get(parent.parent()) {
+            let parent_matrix = parent_global.0;
+            let new_matrix = parent_matrix * transform.compute_matrix();
+
+            if let Ok(mut global) = global_transforms.get_mut(entity) {
+                global.0 = new_matrix;
+            }
+
+            if let Some(children) = children {
+                propagate_recursive(
+                    new_matrix,
+                    children,
+                    &hierarchy_query,
+                    &mut global_transforms,
+                );
+            }
+        }
+    }
+}
+
+// Recursive function remains mostly the same
+fn propagate_recursive(
+    parent_matrix: Mat4,
+    children: &Children,
+    hierarchy_query: &Query<(&Transform, Option<&Children>)>,
+    global_query: &mut Query<&mut GlobalTransform>,
+) {
+    for &child_entity in children {
+        if let Ok((transform, grand_children)) = hierarchy_query.get(child_entity) {
+            let new_matrix = parent_matrix * transform.compute_matrix();
+
+            if let Ok(mut global) = global_query.get_mut(child_entity) {
+                global.0 = new_matrix;
+            }
+
+            if let Some(grand_children) = grand_children {
+                propagate_recursive(new_matrix, grand_children, hierarchy_query, global_query);
+            }
+        }
     }
 }

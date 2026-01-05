@@ -12,20 +12,31 @@ use uuid::Uuid;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, util::DeviceExt};
 
 use crate::{
+    camera::CameraUniform,
+    light::{GpuPointLight, LightUniforms},
     material::{GpuMaterialUniform, Material},
-    mesh::{Mesh, Vertex},
+    mesh::{GpuMesh, Mesh, Vertex, prepare_mesh_transforms},
     texture::GpuTexture,
 };
 
-pub mod global_uniform;
+mod camera;
+mod light;
 mod material;
 pub mod mesh;
 mod texture;
 
 use texture::TextureHelper;
 
-#[derive(Resource)]
-pub struct LayoutResource(pub wgpu::BindGroupLayout);
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub enum RenderSet {
+    Start,  // Acquire swapchain image
+    Scene,  // Draw the main 3D world
+    Overlay, // Draw UI / Debug (Plugins insert here)
+    End,    // Present to screen
+}
+
+// #[derive(Resource)]
+// pub struct LayoutResource(pub wgpu::BindGroupLayout);
 
 #[derive(Resource)]
 pub struct MaterialLayout(pub wgpu::BindGroupLayout);
@@ -49,12 +60,38 @@ pub struct RenderContext {
     pub material_cache: HashMap<Uuid, wgpu::BindGroup>,
 
     pub default_diffuse: GpuTexture,
+
+    pub camera_buffer: wgpu::Buffer,     // Created ONCE
+    pub scene_data_buffer: wgpu::Buffer, // Created ONCE (for lights)
+
+    // 2. Persistent Bind Group
+    pub global_bind_group: wgpu::BindGroup, // References the buffers above
+    pub mesh_bind_group_layout: wgpu::BindGroupLayout, // References the buffers above
+}
+
+#[derive(Resource, Default)]
+pub struct RenderTarget {
+    pub view: Option<wgpu::TextureView>,
+    pub texture: Option<wgpu::SurfaceTexture>,
 }
 
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
+        app.configure_sets(
+            // Assuming you are using your custom 'Render' schedule/stage
+            Stage::Render, 
+            (
+                RenderSet::Start,
+                RenderSet::Scene,
+                RenderSet::Overlay,
+                RenderSet::End,
+            ).chain()
+        );
+
+        app.world.init_resource::<RenderTarget>();
+
         // 1. Setup: Connect to GPU (Runs once at startup)
         app.add_startup_system(init_wgpu);
 
@@ -62,7 +99,11 @@ impl Plugin for RenderPlugin {
         app.add_system(realize_render_components);
 
         // 2. Draw: Clear the screen (Runs every frame)
-        app.add_system(render_frame);
+        app.add_system_to_stage(Stage::Render, start_frame.in_set(RenderSet::Start));
+        app.add_system_to_stage(Stage::Render, render_frame.in_set(RenderSet::Scene));
+        app.add_system_to_stage(Stage::Render, end_frame.in_set(RenderSet::End));
+
+        app.add_system_to_stage(Stage::PostUpdate, &prepare_mesh_transforms);
     }
 }
 
@@ -118,16 +159,30 @@ fn init_wgpu(world: &mut World) {
 
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("Uniform Bind Group Layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+        entries: &[
+            // --- BINDING 0: MVP Matrix ---
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        }],
+            // --- BINDING 1: Light Uniforms ---
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
     });
 
     let material_bind_group_layout =
@@ -164,6 +219,60 @@ fn init_wgpu(world: &mut World) {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                // --- METALLIC-ROUGHNESS MAP ---
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // SAMPLER
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                // --- NORMAL MAP ---
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                // SAMPLER
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+
+    let mesh_bind_group_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("Mesh Bind Group Layout"),
+            entries: &[
+                // --- BINDING 0: MVP Matrix ---
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -171,7 +280,7 @@ fn init_wgpu(world: &mut World) {
     let render_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("Render Pipeline Layout"),
         // NOW WE HAVE TWO SETS: [0: Uniforms, 1: Textures]
-        bind_group_layouts: &[&bind_group_layout, &material_bind_group_layout], // No uniforms yet
+        bind_group_layouts: &[&bind_group_layout, &material_bind_group_layout, &mesh_bind_group_layout], // No uniforms yet
         push_constant_ranges: &[],
     });
 
@@ -232,6 +341,49 @@ fn init_wgpu(world: &mut World) {
         Some("Default White Texture"),
     );
 
+    let initial_camera_data = CameraUniform {
+        view_proj: [[0.0; 4]; 4], // Placeholder
+    };
+
+    let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Camera Buffer"),
+        contents: bytemuck::cast_slice(&[initial_camera_data]),
+        // USAGE: COPY_DST allows us to write to it later!
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+    });
+
+    let initial_light_data = LightUniforms {
+        sun_direction: [0.0, -1.0, 0.0, 1.0],
+        sun_color: [1.0, 1.0, 1.0, 0.0],
+        point_lights: [GpuPointLight {
+            position: [0.0; 4],
+            color: [0.0; 4],
+        }; 4],
+        camera_pos: [0.0, 0.0, 0.0],
+        active_lights: 0,
+    };
+
+    let scene_data_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Scene Data Buffer (Lights)"),
+        contents: bytemuck::cast_slice(&[initial_light_data]),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, // COPY_DST is critical for updates!
+    });
+
+    let global_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("Global Bind Group"),
+        layout: &bind_group_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: scene_data_buffer.as_entire_binding(),
+            },
+        ],
+    });
+
     println!(">>> Catalyst Renderer: Pipeline Compiled <<<");
 
     // 7. Store everything in the World
@@ -249,41 +401,43 @@ fn init_wgpu(world: &mut World) {
         material_cache: HashMap::new(),
 
         default_diffuse: white_pixel,
+
+        camera_buffer,
+        scene_data_buffer,
+        global_bind_group,
+        mesh_bind_group_layout
     });
 
-    world.insert_resource(LayoutResource(bind_group_layout));
+    // world.insert_resource(LayoutResource(bind_group_layout));
     world.insert_resource(MaterialLayout(material_bind_group_layout));
+}
+
+pub fn start_frame(
+    context: Res<RenderContext>,
+    mut target: ResMut<RenderTarget>,
+) {
+    // Acquire the texture ONCE at the start of the frame
+    if let Ok(frame) = context.surface.get_current_texture() {
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        
+        // Store it so other plugins can see it
+        target.texture = Some(frame);
+        target.view = Some(view);
+    }
 }
 
 // --- SYSTEM 2: RENDERING ---
 fn render_frame(
     mut context: ResMut<RenderContext>,
-    layout_res: Res<LayoutResource>,
+    mut target: ResMut<RenderTarget>,
+    // layout_res: Res<LayoutResource>,
     // We query for the Camera separately
     camera_q: Query<(&Camera, &Transform)>,
     // We query for Objects
-    mesh_q: Query<(&Mesh, &Material, &Transform), Without<Camera>>,
+    mesh_q: Query<(&Mesh, &Material, &GpuMesh), Without<Camera>>,
 ) {
-    // 1. Get the next frame texture from the swapchain
-    let output = match context.surface.get_current_texture() {
-        Ok(texture) => texture,
-        Err(wgpu::SurfaceError::Lost) => {
-            // Surface lost (e.g., window minimized), reconfigure next frame
-            context.surface.configure(&context.device, &context.config);
-            return;
-        }
-        Err(e) => {
-            eprintln!("Render error: {:?}", e);
-            return;
-        }
-    };
-
-    let view = output
-        .texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-
     // 1. Calculate Camera Matrix (View * Projection)
-    let (view_proj, camera_pos) = if let Ok((_cam, cam_t)) = camera_q.single() {
+    let view_proj = if let Ok((_cam, cam_t)) = camera_q.single() {
         // A: View Matrix (Inverse of Camera Transform)
         // Move the world opposite to the camera
         let view = Mat4::look_at_rh(
@@ -301,9 +455,9 @@ fn render_frame(
             100.0, // Far Plane
         );
 
-        (proj * view, cam_t.translation)
+        proj * view
     } else {
-        (Mat4::IDENTITY, Vec3::ZERO)
+        Mat4::IDENTITY
     };
 
     // 2. Create a Command Encoder
@@ -318,7 +472,7 @@ fn render_frame(
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("Main Render Pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
+                view: &target.view.as_ref().unwrap(),
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
@@ -345,8 +499,14 @@ fn render_frame(
         // Use our pipeline
         render_pass.set_pipeline(&context.pipeline);
 
+        context.queue.write_buffer(
+            &context.camera_buffer,                                // Target
+            0,                                                     // Offset
+            bytemuck::cast_slice(&[view_proj.to_cols_array_2d()]), // Data
+        );
+
         // ITERATE OVER ECS ENTITIES
-        for (mesh, material, transform) in &mesh_q {
+        for (mesh, material, gpu_mesh) in &mesh_q {
             let mesh_id = mesh.0.id;
 
             if let (Some(v_buf), Some(i_buf), Some(index_count), Some(mat_bind_group)) = (
@@ -355,41 +515,10 @@ fn render_frame(
                 context.index_counts.get(&mesh_id),
                 context.material_cache.get(&material.0.id),
             ) {
-                // A. Calculate MVP Matrix (Model-View-Projection)
-                // Model: Local -> World
-                let model_matrix =
-                    Mat4::from_rotation_translation(transform.rotation, transform.translation);
-
-                // Final Matrix: Local -> Clip Space
-                let mvp_matrix = view_proj * model_matrix;
-
-                // B. Create Uniform Buffer for THIS object
-                // (Note: For 1000s of objects, use DynamicUniformBuffer. For now, this is fine.)
-                let mvp_ref = mvp_matrix.to_cols_array_2d();
-                let uniform_buffer =
-                    context
-                        .device
-                        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                            label: Some("Uniform Buffer"),
-                            contents: bytemuck::cast_slice(&[mvp_ref]), // cast [[f32;4];4] to bytes
-                            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-                        });
-
-                // C. Create Bind Group
-                let bind_group = context
-                    .device
-                    .create_bind_group(&wgpu::BindGroupDescriptor {
-                        layout: &layout_res.0,
-                        entries: &[wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: uniform_buffer.as_entire_binding(),
-                        }],
-                        label: Some("Object Bind Group"),
-                    });
-
                 // D. Draw!
-                render_pass.set_bind_group(0, &bind_group, &[]);
+                render_pass.set_bind_group(0, &context.global_bind_group, &[]);
                 render_pass.set_bind_group(1, mat_bind_group, &[]);
+                render_pass.set_bind_group(2, &gpu_mesh.bind_group, &[]);
 
                 render_pass.set_vertex_buffer(0, v_buf.slice(..));
                 render_pass.set_index_buffer(i_buf.slice(..), wgpu::IndexFormat::Uint32);
@@ -400,7 +529,14 @@ fn render_frame(
 
     // 4. Submit to GPU
     context.queue.submit(std::iter::once(encoder.finish()));
-    output.present();
+}
+
+pub fn end_frame(mut target: ResMut<RenderTarget>) {
+    // Take the frame out and present it
+    if let Some(frame) = target.texture.take() {
+        frame.present();
+    }
+    target.view = None;
 }
 
 fn prepare_gpu_assets(
@@ -523,7 +659,45 @@ fn create_material_bind_group(
         });
 
     // B. Find Texture (or Fallback)
-    let (view, sampler) = if let Some(tex_handle) = &mat_data.diffuse_texture {
+    let (diffuse_view, diffuse_sampler) = if let Some(tex_handle) = &mat_data.diffuse_texture {
+        if let Some(gpu_tex) = context.texture_cache.get(&tex_handle.id) {
+            // Success: Real Texture
+            (&gpu_tex.view, &gpu_tex.sampler)
+        } else {
+            // Fallback: Texture loading... use White Pixel for now
+            (
+                &context.default_diffuse.view,
+                &context.default_diffuse.sampler,
+            )
+        }
+    } else {
+        // Fallback: No texture assigned
+        (
+            &context.default_diffuse.view,
+            &context.default_diffuse.sampler,
+        )
+    };
+
+    let (roughness_view, roughness_sampler) = if let Some(tex_handle) = &mat_data.metallic_roughness_texture {
+        if let Some(gpu_tex) = context.texture_cache.get(&tex_handle.id) {
+            // Success: Real Texture
+            (&gpu_tex.view, &gpu_tex.sampler)
+        } else {
+            // Fallback: Texture loading... use White Pixel for now
+            (
+                &context.default_diffuse.view,
+                &context.default_diffuse.sampler,
+            )
+        }
+    } else {
+        // Fallback: No texture assigned
+        (
+            &context.default_diffuse.view,
+            &context.default_diffuse.sampler,
+        )
+    };
+
+    let (normal_view, normal_sampler) = if let Some(tex_handle) = &mat_data.normal_texture {
         if let Some(gpu_tex) = context.texture_cache.get(&tex_handle.id) {
             // Success: Real Texture
             (&gpu_tex.view, &gpu_tex.sampler)
@@ -555,11 +729,27 @@ fn create_material_bind_group(
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(view),
+                    resource: wgpu::BindingResource::TextureView(diffuse_view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(sampler),
+                    resource: wgpu::BindingResource::Sampler(diffuse_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(roughness_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(roughness_sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(normal_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::Sampler(normal_sampler),
                 },
             ],
         });
@@ -588,3 +778,61 @@ pub fn realize_render_components(
             .insert(Material(definition.0.clone()));
     }
 }
+
+// pub fn prepare_lights(
+//     // We need the RenderContext to access the Buffer and Queue
+//     context: &mut RenderContext,
+
+//     // Queries to find lights in the scene
+//     sun_query: Query<(&GlobalTransform, &DirectionalLight)>,
+//     point_query: Query<(&GlobalTransform, &PointLight)>,
+
+//     // We need Camera pos for specular calculations
+//     cam_query: Query<&GlobalTransform, With<Camera>>,
+// ) {
+//     let mut uniforms = LightUniforms {
+//         sun_direction: [0.0, -1.0, 0.0, 1.0], // Default Down
+//         sun_color: [1.0, 1.0, 1.0, 0.0],
+//         point_lights: [GpuPointLight {
+//             position: [0.0; 4],
+//             color: [0.0; 4],
+//         }; 4],
+//         camera_pos: [0.0, 0.0, 0.0],
+//         active_lights: 0,
+//     };
+
+//     // A. Process Sun (Take the first one we find)
+//     if let Some((transform, sun)) = sun_query.iter().next() {
+//         // Calculate forward vector from rotation
+//         let forward = transform.forward(); // Bevy GlobalTransform helper
+//         uniforms.sun_direction = [forward.x, forward.y, forward.z, sun.intensity];
+//         uniforms.sun_color = [sun.color[0], sun.color[1], sun.color[2], 0.0];
+//     }
+
+//     // B. Process Point Lights
+//     let mut count = 0;
+//     for (transform, light) in point_query.iter().take(4) {
+//         // Limit to 4!
+//         let pos = transform.translation();
+//         uniforms.point_lights[count] = GpuPointLight {
+//             position: [pos.x, pos.y, pos.z, light.intensity],
+//             color: [light.color[0], light.color[1], light.color[2], light.radius],
+//         };
+//         count += 1;
+//     }
+//     uniforms.active_lights = count as u32;
+
+//     // C. Process Camera Position
+//     if let Some(cam_tf) = cam_query.iter().next() {
+//         let pos = cam_tf.translation();
+//         uniforms.camera_pos = [pos.x, pos.y, pos.z];
+//     }
+
+//     // D. Upload to GPU
+//     // "scene_data_buffer" is the buffer you created in Binding 1 of Group 0
+//     context.queue.write_buffer(
+//         &context.scene_data_buffer,
+//         0,
+//         bytemuck::cast_slice(&[uniforms]),
+//     );
+// }

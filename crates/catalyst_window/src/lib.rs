@@ -1,4 +1,4 @@
-use catalyst_core::{App, Input, Plugin, time::Time};
+use catalyst_core::{App, Input, Plugin, SystemEvents, time::Time};
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, KeyEvent, WindowEvent},
@@ -60,6 +60,10 @@ impl ApplicationHandler for CatalystRunner {
         window_id: winit::window::WindowId,
         event: WindowEvent,
     ) {
+        if let Some(mut events) = self.app.world.get_resource_mut::<SystemEvents>() {
+            events.buffer.push(event.clone());
+        }
+
         match event {
             WindowEvent::KeyboardInput {
                 event:
@@ -89,6 +93,10 @@ impl ApplicationHandler for CatalystRunner {
 
                 // 2. Run the Systems
                 self.app.update();
+
+                if let Some(mut events) = self.app.world.get_resource_mut::<SystemEvents>() {
+                    events.clear(); // <--- USED HERE
+                }
 
                 // 3. Request next frame
                 if let Some(window_res) = self.app.world.get_non_send_resource::<MainWindow>() {

@@ -1,6 +1,7 @@
 use catalyst_assets::{AssetPlugin, asset_server::AssetServer, assets::Handle, scene::SceneData};
 // Component to track a heavy calculation
 use catalyst_core::{camera::Camera, time::Time, transform::Transform, *};
+use catalyst_debug::DebugPlugin;
 use catalyst_renderer::{
     RenderPlugin,
     mesh::{Mesh},
@@ -16,9 +17,10 @@ fn main() {
     let mut app = App::new();
 
     app.add_plugin(WindowPlugin);
-    app.add_plugin(RenderPlugin);
     app.add_plugin(AssetPlugin);
     app.add_plugin(ScenePlugin);
+    app.add_plugin(RenderPlugin);
+    app.add_plugin(DebugPlugin);
 
     // Spawn the Triangle
     app.add_startup_system(setup_scene);
@@ -45,7 +47,7 @@ fn setup_scene(mut commands: Commands, asset_server: Res<AssetServer>) {
     //     Transform::from_xyz(0.0, 0.0, 0.0), // Position at center
     // ));
 
-    let scene_handle = asset_server.load_scene("assets/scene1.glb");
+    let scene_handle = asset_server.load_scene("assets/scene2.glb");
     commands.spawn(catalyst_scene::SceneRoot(scene_handle));
 
     // commands.spawn((

@@ -5,7 +5,7 @@ members = [
     "crates/catalyst_core",
     "crates/catalyst_app",
     "crates/catalyst_window", "crates/catalyst_renderer"
-, "crates/catalyst_assets", "crates/catalyst_scene"]
+, "crates/catalyst_assets", "crates/catalyst_scene", "crates/catalyst_debug"]
 
 [workspace.dependencies]
 # This section ensures all crates use the SAME versions of libraries
@@ -13,14 +13,15 @@ winit = "0.30.12"
 log = "0.4"
 env_logger = "0.11"
 nalgebra = "0.34"
-bevy_ecs = "0.17"
-bevy_hierarchy = "0.17"
+bevy_ecs = { version = "0.17", features = ["bevy_debug_stepping"]}
+bevy_reflect = { version = "0.17", features = ["glam"]}
 rayon = "1.10"
 tokio = { version = "1.47.1", features = ["full"] }
 async-trait = "0.1.89"
 glam = { version = "0.30", features = ["bytemuck"] }
 thiserror = "2.0"
 uuid = { version = "1.0", features = ["v4"] }
+flecs_ecs = "0.2.2"
 
 # Internal dependencies
 catalyst_core = { path = "crates/catalyst_core" }
@@ -28,3 +29,4 @@ catalyst_window = { path = "crates/catalyst_window" }
 catalyst_renderer = { path = "crates/catalyst_renderer" }
 catalyst_assets = { path = "crates/catalyst_assets" }
 catalyst_scene = { path = "crates/catalyst_scene" }
+catalyst_debug = { path = "crates/catalyst_debug" }

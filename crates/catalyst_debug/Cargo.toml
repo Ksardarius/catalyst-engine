@@ -1,0 +1,18 @@
+[package]
+name = "catalyst_debug"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy_ecs = { workspace = true }
+bevy_reflect = { workspace = true }
+winit = { workspace = true }
+glam = { workspace = true }
+wgpu = "27.0"  # The graphics API
+egui = "0.33"
+egui-wgpu = "0.33"
+egui-winit = "0.33"
+
+catalyst_core = { workspace = true }
+catalyst_renderer = { workspace = true }
+catalyst_window = { workspace = true }

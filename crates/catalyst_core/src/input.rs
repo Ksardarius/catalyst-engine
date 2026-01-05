@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use bevy_ecs::resource::Resource;
+use winit::event::WindowEvent;
 pub use winit::keyboard::KeyCode;
 
 #[derive(Resource, Default)]
@@ -19,6 +20,18 @@ impl Input {
 
     pub fn release(&mut self, key: KeyCode) {
         self.pressed.remove(&key);
+    }
+}
+
+// needed to pass event to GUI systems
+#[derive(Resource, Default)]
+pub struct SystemEvents {
+    pub buffer: Vec<WindowEvent>,
+}
+
+impl SystemEvents {
+    pub fn clear(&mut self) {
+        self.buffer.clear();
     }
 }
 

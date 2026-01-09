@@ -6,8 +6,7 @@ edition = "2024"
 [dependencies]
 tobj = "4.0"
 
-bevy_ecs = { workspace = true }
-bevy_reflect = { workspace = true }
+flecs_ecs = { workspace = true }
 rayon = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true }

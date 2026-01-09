@@ -1,15 +1,17 @@
-use std::{collections::HashMap, marker::PhantomData, sync::{Arc, RwLock}};
-
-use bevy_ecs::resource::Resource;
+use std::{cmp::Ordering, marker::PhantomData};
+use flecs_ecs::prelude::*;
+use std::hash::{Hash, Hasher};
 use uuid::Uuid;
+
+use crate::asset_events::AssetLookup;
 
 // 1. The ID (Handle)
 // It's just a unique number. Efficient to copy.
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug)]
 pub struct Handle<T> {
     pub id: Uuid,
     marker: PhantomData<T>,
-}
+}      
 
 impl<T> Handle<T> {
     pub fn new() -> Self {
@@ -25,6 +27,17 @@ impl<T> Handle<T> {
             marker: PhantomData,
         }
     }
+
+    pub fn try_get_entity<'a>(&self, world: &'a World) -> Option<EntityView<'a>> {
+        world.try_get::<&AssetLookup>(|lookup| {
+            if let Some(&entity_id) = lookup.map.get(&self.id) {
+                let entity = world.entity_from_id(entity_id);
+                Some(entity)
+            } else {
+                None
+            }
+        }).flatten()
+    }
 }
 
 impl<T> Clone for Handle<T> {
@@ -36,41 +49,37 @@ impl<T> Clone for Handle<T> {
     }
 }
 
-// 2. The Storage (Bank)
-// We use RwLock so we can read from multiple threads (Renderer) safely.
-#[derive(Resource)]
-pub struct Assets<T: Send + Sync + 'static> {
-    storage: Arc<RwLock<HashMap<Uuid, Arc<T>>>>,
-}
-
-impl<T: Send + Sync + 'static> Default for Assets<T> {
-    fn default() -> Self {
-        Self {
-            storage: Arc::new(RwLock::new(HashMap::new())),
-        }
+impl<T> PartialEq for Handle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
     }
 }
 
-impl<T: Send + Sync + 'static> Assets<T> {
-    pub fn add(&mut self, asset: T) -> Handle<T> {
-        let handle = Handle::new();
-        let mut map = self.storage.write().unwrap();
-        map.insert(handle.id, Arc::new(asset));
-        handle
-    }
+impl<T> Eq for Handle<T> {}
 
-    pub fn insert(&self, handle: Handle<T>, asset: T) {
-        self.insert_by_id(handle.id, asset);
+// 4. Implement Hash manually
+// Crucial for using Handle in HashMaps
+impl<T> Hash for Handle<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
+}
 
-    pub fn insert_by_id(&self, id: Uuid, asset: T) {
-        let mut map = self.storage.write().unwrap();
-        map.insert(id, Arc::new(asset));
+// 1. Implement Ord (Total ordering)
+// This is used by .sort(), .order_by(), and BTreeMap
+impl<T> Ord for Handle<T> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // We only compare the ID, completely ignoring the generic marker
+        self.id.cmp(&other.id)
     }
+}
 
-    pub fn get(&self, handle: &Handle<T>) -> Option<Arc<T>> {
-        let map = self.storage.read().unwrap();
-        map.get(&handle.id).cloned()
+// 2. Implement PartialOrd
+// This is used for <, >, <=, >= operators
+impl<T> PartialOrd for Handle<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // Just delegate to the Ord implementation for consistency
+        Some(self.cmp(other))
     }
 }
 
@@ -81,7 +90,7 @@ pub struct Vertex {
     pub uv: [f32; 2],
 }
 
-#[derive(Debug)]
+#[derive(Component, Debug)]
 pub struct MeshData {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,

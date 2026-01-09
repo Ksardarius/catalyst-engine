@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use bevy_ecs::resource::Resource;
+use flecs_ecs::macros::Component;
 use winit::event::WindowEvent;
 pub use winit::keyboard::KeyCode;
 
-#[derive(Resource, Default)]
+#[derive(Component, Default)]
 pub struct Input {
     pressed: HashSet<KeyCode>,
 }
@@ -24,7 +24,7 @@ impl Input {
 }
 
 // needed to pass event to GUI systems
-#[derive(Resource, Default)]
+#[derive(Component, Default)]
 pub struct SystemEvents {
     pub buffer: Vec<WindowEvent>,
 }

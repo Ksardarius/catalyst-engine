@@ -9,7 +9,7 @@ catalyst_window = { workspace = true } # We need access to window types
 catalyst_assets = { workspace = true }
 wgpu = "27.0"  # The graphics API
 log = { workspace = true }
-bevy_ecs = { workspace = true }
+flecs_ecs = { workspace = true }
 glam = { workspace = true }
 uuid = { workspace = true }
 

@@ -1,4 +1,4 @@
-use bevy_ecs::component::Component;
+use flecs_ecs::macros::Component;
 use glam::Mat4;
 
 #[derive(Component)]

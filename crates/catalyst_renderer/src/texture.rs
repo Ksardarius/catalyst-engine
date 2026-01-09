@@ -1,6 +1,13 @@
 use catalyst_assets::material::TextureData;
-use wgpu::{Device, Extent3d, TextureDescriptor, TextureDimension, TextureFormat, TextureUsages, SurfaceConfiguration};
+use flecs_ecs::prelude::*;
+use wgpu::{
+    Device, Extent3d, SurfaceConfiguration, TextureDescriptor, TextureDimension, TextureFormat,
+    TextureUsages,
+};
 
+use crate::render::RenderContext;
+
+#[derive(Component, Clone)]
 pub struct GpuTexture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -12,11 +19,15 @@ impl GpuTexture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         data: &TextureData,
-        label: Option<&str>
+        label: Option<&str>,
     ) -> Self {
         let wgpu_format = match data.format {
-            catalyst_assets::material::TextureFormat::Rgba8Unorm => wgpu::TextureFormat::Rgba8UnormSrgb,
-            catalyst_assets::material::TextureFormat::Rgba32Float => wgpu::TextureFormat::Rgba32Float,
+            catalyst_assets::material::TextureFormat::Rgba8Unorm => {
+                wgpu::TextureFormat::Rgba8UnormSrgb
+            }
+            catalyst_assets::material::TextureFormat::Rgba32Float => {
+                wgpu::TextureFormat::Rgba32Float
+            }
             catalyst_assets::material::TextureFormat::Gray8 => wgpu::TextureFormat::R8Unorm,
         };
 
@@ -40,7 +51,7 @@ impl GpuTexture {
         // 2. Upload Pixels
         queue.write_texture(
             // RENAMED: ImageCopyTexture -> TexelCopyTextureInfo
-            wgpu::TexelCopyTextureInfo { 
+            wgpu::TexelCopyTextureInfo {
                 texture: &texture,
                 mip_level: 0,
                 origin: wgpu::Origin3d::ZERO,
@@ -48,7 +59,7 @@ impl GpuTexture {
             },
             &data.pixels,
             // RENAMED: ImageDataLayout -> TexelCopyBufferLayout
-            wgpu::TexelCopyBufferLayout { 
+            wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * data.width),
                 rows_per_image: Some(data.height),
@@ -63,12 +74,16 @@ impl GpuTexture {
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat, // Wrap texture
             address_mode_v: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Linear,      // Smooth close up
-            min_filter: wgpu::FilterMode::Linear,      // Smooth far away
+            mag_filter: wgpu::FilterMode::Linear, // Smooth close up
+            min_filter: wgpu::FilterMode::Linear, // Smooth far away
             ..Default::default()
         });
 
-        Self { texture, view, sampler }
+        Self {
+            texture,
+            view,
+            sampler,
+        }
     }
 }
 
@@ -102,4 +117,17 @@ impl TextureHelper {
         let texture = device.create_texture(&desc);
         texture.create_view(&wgpu::TextureViewDescriptor::default())
     }
+}
+
+pub fn register_texture_handlers(world: &World) {
+    world
+        .system_named::<(&TextureData, &mut RenderContext)>("Init Texture GPU buffers")
+        .without(GpuTexture::id())
+        .kind(flecs::pipeline::OnStore)
+        .each_entity(|entity, (texture_data, context)| {
+            let gpu_tex =
+                GpuTexture::from_image(&context.device, &context.queue, &texture_data, None);
+
+            entity.set(gpu_tex);
+        });
 }

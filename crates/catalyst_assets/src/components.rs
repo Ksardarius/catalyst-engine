@@ -1,4 +1,4 @@
-use catalyst_core::Component;
+use flecs_ecs::macros::Component;
 
 use crate::{assets::{Handle, MeshData}, material::MaterialData};
 

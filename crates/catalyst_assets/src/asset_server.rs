@@ -1,4 +1,4 @@
-use bevy_ecs::resource::Resource;
+use flecs_ecs::macros::Component;
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
@@ -30,7 +30,7 @@ pub enum AssetWorkerMessage {
     },
 }
 
-#[derive(Resource, Clone)]
+#[derive(Component, Clone)]
 pub struct AssetServer {
     event_sender: UnboundedSender<AssetWorkerMessage>,
     // The "Ticket" to the Async World

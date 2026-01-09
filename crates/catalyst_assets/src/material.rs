@@ -1,3 +1,4 @@
+use flecs_ecs::prelude::*;
 use crate::assets::Handle;
 
 #[derive(Clone, Copy, Debug)]
@@ -7,7 +8,7 @@ pub enum TextureFormat {
     Gray8,      // Grayscale (used for Roughness/Metallic masks)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Component, Clone, Debug)]
 pub struct TextureData {
     pub pixels: Vec<u8>,
     pub width: u32,
@@ -32,7 +33,7 @@ impl Default for MaterialSettings {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Component, Clone, Debug)]
 pub struct MaterialData {
     pub settings: MaterialSettings,
     pub diffuse_texture: Option<Handle<TextureData>>,

@@ -1,14 +1,15 @@
+use flecs_ecs::{core::flecs::Wildcard, prelude::*};
 use std::mem;
 
 use bytemuck::{Pod, Zeroable};
-use catalyst_assets::assets::{Handle, MeshData};
-use catalyst_core::{
-    Changed, Commands, Component, Entity, Query, Res, ResMut, With, Without,
-    transform::GlobalTransform,
+use catalyst_assets::{
+    MeshDefinition,
+    assets::{Handle, MeshData},
 };
+use catalyst_core::transform::GlobalTransform;
 use wgpu::util::DeviceExt;
 
-use crate::RenderContext;
+use crate::render::RenderContext;
 
 // #[repr(C)] ensures the compiler doesn't reorder fields.
 // Pod (Plain Old Data) and Zeroable allow us to cast this struct to raw bytes safely.
@@ -29,7 +30,7 @@ impl MeshUniform {
     // Helper to calculate this from your ECS component
     pub fn from_transform(global: &GlobalTransform) -> Self {
         let model_matrix = global.0; // The Mat4 you calculated in PostUpdate
-        
+
         // Lighting math: Transpose(Inverse(Model))
         // If you squash a sphere, the normals shouldn't squash; they should stretch.
         // This matrix fixes that.
@@ -78,44 +79,63 @@ impl Vertex {
     }
 }
 
-// // 1. Rename the old Mesh struct to "MeshData" (The heavy part)
-// pub struct MeshData {
-//     pub vertices: Vec<Vertex>,
-//     pub indices: Vec<u32>
-// }
-
 // 2. The Component is now just a Handle!
 #[derive(Component, Clone)]
-pub struct Mesh(pub Handle<MeshData>);
+pub struct AssetMesh;
 
 #[derive(Component)]
-pub struct GpuMesh {
+pub struct MeshInstance {
     pub bind_group: wgpu::BindGroup, // Passed to render_pass.set_bind_group(2, ...)
     pub buffer: wgpu::Buffer,        // Passed to queue.write_buffer(...)
 }
 
-pub fn prepare_mesh_transforms(
-    mut commands: Commands,
-    mut context: ResMut<RenderContext>,
+#[derive(Component)]
+pub struct GpuGeometry {
+    pub vertex_buffer: wgpu::Buffer,
+    pub index_buffer: wgpu::Buffer,
+    pub index_count: u32,
+}
 
-    // QUERY A: "The Newcomers"
+pub fn register_mesh_handlers(world: &World) {
+    world
+        .system_named::<(&MeshData, &mut RenderContext)>("Init Mesh GPU buffers")
+        .without(GpuGeometry::id())
+        .kind(flecs::pipeline::OnStore)
+        .each_entity(|entity, (mesh_data, context)| {
+            let (v_buf, i_buf, count) = create_gpu_buffer(&context.device, mesh_data);
+
+            entity.set(GpuGeometry {
+                vertex_buffer: v_buf,
+                index_buffer: i_buf,
+                index_count: count,
+            });
+        });
+
+    world
+        .system_named::<&MeshDefinition>("Link Mesh Definition to AssetMesh")
+        .without((AssetMesh, Wildcard))
+        .each_entity(|entity, definition| {
+            let world = entity.world();
+            if let Some(mesh_entity) = definition.0.try_get_entity(&world) {
+                entity.add((AssetMesh, mesh_entity));
+            }
+        });
+
     // Find entities that have a mesh and position, but NO GPU data yet.
-    new_entities: Query<(Entity, &GlobalTransform), (With<Mesh>, Without<GpuMesh>)>,
+    world
+        .system_named::<(&GlobalTransform, &mut RenderContext)>("Setup Meshes in GPU")
+        .with((AssetMesh, Wildcard))
+        .without(MeshInstance::id())
+        .kind(flecs::pipeline::OnUpdate)
+        .each_entity(|entity, (global_transform, context)| {
+            // 1. Calculate Matrices
+            // We take the Position/Rotation/Scale from the ECS and turn it into
+            // the 4x4 matrix the shader expects.
+            let uniform = MeshUniform::from_transform(global_transform);
 
-    // QUERY B: "The Movers"
-    // Find entities that already have GPU data, but moved this frame.
-    mut moving_entities: Query<(&GlobalTransform, &GpuMesh), Changed<GlobalTransform>>,
-) {
-    for (entity, global_transform) in new_entities.iter() {
-        // 1. Calculate Matrices
-        // We take the Position/Rotation/Scale from the ECS and turn it into
-        // the 4x4 matrix the shader expects.
-        let uniform = MeshUniform::from_transform(global_transform);
-
-        // 2. Allocate VRAM (Expensive!)
-        // We ask the GPU to reserve 128 bytes of memory for this specific object.
-        let buffer =
-            context
+            // 2. Allocate VRAM (Expensive!)
+            // We ask the GPU to reserve 128 bytes of memory for this specific object.
+            let buffer = context
                 .device
                 .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some("Mesh Uniform Buffer"),
@@ -124,40 +144,69 @@ pub fn prepare_mesh_transforms(
                     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
                 });
 
-        // 3. Create the Bind Group ( The "Signpost")
-        // We create a handle that tells the shader: "When you ask for Group 2, look at THIS buffer."
-        let bind_group = context
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("Mesh Bind Group"),
-                layout: &context.mesh_bind_group_layout, // Defined in Renderer::new()
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: buffer.as_entire_binding(),
-                }],
-            });
+            // 3. Create the Bind Group ( The "Signpost")
+            // We create a handle that tells the shader: "When you ask for Group 2, look at THIS buffer."
+            let bind_group = context
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Mesh Bind Group"),
+                    layout: &context.mesh_bind_group_layout, // Defined in Renderer::new()
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buffer.as_entire_binding(),
+                    }],
+                });
 
-        // 4. Save the Handles
-        // We attach these handles back to the Entity so we can find them next frame.
-        commands
-            .entity(entity)
-            .insert(GpuMesh { bind_group, buffer });
+            entity.set(MeshInstance { bind_group, buffer });
+        });
+
+    world
+        .system_named::<(&GlobalTransform, &MeshInstance, &mut RenderContext)>(
+            "Setup Mesh in GPU on change",
+        )
+        .kind(flecs::pipeline::PostUpdate)
+        .detect_changes()
+        .each(|(global_transform, gpu_mesh, context)| {
+            let uniform = MeshUniform::from_transform(global_transform);
+
+            // 2. Upload Data (Cheap!)
+            // We don't allocate memory. We just copy 128 bytes over the PCIe bus
+            // into the existing buffer we created in Phase 1.
+            context.queue.write_buffer(
+                &gpu_mesh.buffer, // The buffer stored in the GpuMesh component
+                0,                // Offset 0 (Overwrite from start)
+                bytemuck::cast_slice(&[uniform]),
+            );
+        });
+}
+
+fn create_gpu_buffer(device: &wgpu::Device, data: &MeshData) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+    // 1. Interleave Data (SoA -> AoS)
+    // We combine pos, normal, uv into a single 'Vertex' struct list
+    let vertex_count = data.vertices.len();
+    let mut vertices = Vec::with_capacity(vertex_count);
+
+    for i in 0..vertex_count {
+        vertices.push(Vertex {
+            position: data.vertices[i].position,
+            normal: data.vertices[i].normal,
+            uv: data.vertices[i].uv,
+        });
     }
 
-    // 'Changed<GlobalTransform>' is the magic filter.
-    // If you have 10,000 static walls, this loop runs 0 times.
-    for (global_transform, gpu_mesh) in moving_entities.iter() {
-        
-        // 1. Recalculate Matrices
-        let uniform = MeshUniform::from_transform(global_transform);
-        
-        // 2. Upload Data (Cheap!)
-        // We don't allocate memory. We just copy 128 bytes over the PCIe bus
-        // into the existing buffer we created in Phase 1.
-        context.queue.write_buffer(
-            &gpu_mesh.buffer, // The buffer stored in the GpuMesh component
-            0,                // Offset 0 (Overwrite from start)
-            bytemuck::cast_slice(&[uniform])
-        );
-    }
+    use wgpu::util::DeviceExt;
+
+    let v_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Mesh Vertex Buffer"),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::VERTEX,
+    });
+
+    let i_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Mesh Index Buffer"),
+        contents: bytemuck::cast_slice(&data.indices),
+        usage: wgpu::BufferUsages::INDEX,
+    });
+
+    (v_buffer, i_buffer, data.indices.len() as u32)
 }

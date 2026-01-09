@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy_ecs = { workspace = true }
+flecs_ecs = { workspace = true }
 catalyst_assets = { workspace = true }
 catalyst_core = { workspace = true }

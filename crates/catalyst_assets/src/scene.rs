@@ -1,8 +1,9 @@
+use flecs_ecs::prelude::*;
 use catalyst_core::transform::Transform;
 
 use crate::{assets::{Handle, MeshData}, material::{MaterialData, TextureData}};
 
-#[derive(Clone, Debug)]
+#[derive(Component, Clone, Debug)]
 pub struct SceneData {
     pub meshes: Vec<Handle<MeshData>>,
     pub materials: Vec<Handle<MaterialData>>,

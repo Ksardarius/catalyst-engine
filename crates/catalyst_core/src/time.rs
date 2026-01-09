@@ -1,8 +1,8 @@
 use std::time::{Duration, Instant};
 
-use bevy_ecs::resource::Resource;
+use flecs_ecs::macros::Component;
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct Time {
     startup: Instant,
     last_update: Instant,

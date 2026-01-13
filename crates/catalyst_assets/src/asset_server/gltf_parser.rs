@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use catalyst_core::transform::Transform;
+use catalyst_core::{
+    camera::{self, Camera},
+    transform::Transform,
+};
 use glam::Quat;
 use gltf::image::Format;
 
@@ -57,7 +60,7 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
         let tex_data = TextureData {
             width: image.width,
             height: image.height,
-            pixels: converted_pixels,               // Raw RGBA bytes
+            pixels: converted_pixels,          // Raw RGBA bytes
             format: TextureFormat::Rgba8Unorm, // GLTF is almost always RGBA8
         };
 
@@ -192,20 +195,38 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
             .and_then(|m| m.primitives().next())
             .and_then(|p| p.material().index());
 
+        let camera_index = node.camera().map(|cam|cam.index());
+
         scene_nodes.push(crate::scene::SceneNode {
             name: node.name().unwrap_or("Node").to_string(),
             transform,
             mesh_index,
             material_index,
+            camera_index,
             children: node.children().map(|c| c.index()).collect(),
         });
     }
+
+    // camera
+    let cameras: Vec<_> = document
+        .cameras()
+        .map(|c| match c.projection() {
+            gltf::camera::Projection::Orthographic(orthographic) => Camera::default(),
+            gltf::camera::Projection::Perspective(perspective) => Camera {
+                fov: perspective.yfov(),
+                aspect_ratio: perspective.aspect_ratio().unwrap_or(1f32),
+                near: perspective.znear(),
+                far: perspective.zfar().unwrap_or(1f32),
+            },
+        })
+        .collect();
 
     let scene_data = SceneData {
         nodes: scene_nodes,
         textures: texture_map,
         materials: material_map,
         meshes: mesh_map,
+        camera: cameras,
     };
 
     Ok((

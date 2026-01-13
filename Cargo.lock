@@ -444,6 +444,7 @@ version = "0.1.0"
 dependencies = [
  "catalyst_assets",
  "catalyst_core",
+ "catalyst_input",
  "catalyst_renderer",
  "catalyst_scene",
  "catalyst_window",
@@ -452,6 +453,7 @@ dependencies = [
  "glam",
  "rayon",
  "tokio",
+ "winit",
 ]
 
 [[package]]
@@ -480,6 +482,15 @@ dependencies = [
  "tokio",
  "uuid",
  "winit",
+]
+
+[[package]]
+name = "catalyst_input"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.10.0",
+ "catalyst_core",
+ "flecs_ecs",
 ]
 
 [[package]]
@@ -512,6 +523,7 @@ name = "catalyst_window"
 version = "0.1.0"
 dependencies = [
  "catalyst_core",
+ "catalyst_input",
  "flecs_ecs",
  "log",
  "winit",

@@ -1,13 +1,14 @@
-use catalyst_core::{App, Input, Plugin, SystemEvents, time::Time};
+use catalyst_core::{App, Plugin, SystemEvents, time::Time};
+use catalyst_input::physical::{DeviceKind, InputState, MouseButtonId, PhysicalInputId};
 use flecs_ecs::{
     core::{WorldGet, flecs},
     macros::Component,
 };
 use winit::{
     application::ApplicationHandler,
-    event::{ElementState, KeyEvent, WindowEvent},
+    event::{KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::Window,
+    window::{CursorGrabMode, Window},
 };
 
 #[derive(Component)]
@@ -45,6 +46,11 @@ impl ApplicationHandler for CatalystRunner {
         self.app.world.set(MainWindow(
             event_loop
                 .create_window(Window::default_attributes().with_title("Catalyst Engine"))
+                .map(|w| {
+                    w.set_cursor_grab(CursorGrabMode::Locked).unwrap();
+                    w.set_cursor_visible(false);
+                    w
+                })
                 .unwrap(),
         ));
 
@@ -60,6 +66,23 @@ impl ApplicationHandler for CatalystRunner {
         });
     }
 
+    fn device_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        match event {
+            winit::event::DeviceEvent::MouseMotion { delta } => {
+                self.app.world.get::<&mut InputState>(|input_state| {
+                    input_state.mouse_delta.0 += delta.0 as f32;
+                    input_state.mouse_delta.1 += delta.1 as f32;
+                });
+            }
+            _ => {}
+        }
+    }
+
     fn window_event(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
@@ -70,21 +93,49 @@ impl ApplicationHandler for CatalystRunner {
             events.buffer.push(event.clone());
         });
 
-        match event {
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: winit::keyboard::PhysicalKey::Code(code),
-                        state,
-                        ..
-                    },
-                ..
-            } => {
-                self.app.world.get::<&mut Input>(|input| match state {
-                    ElementState::Pressed => input.press(code),
-                    ElementState::Released => input.release(code),
-                });
+        // handle inputs
+        self.app.world.try_get::<&mut InputState>(|input_state| {
+            match event {
+                WindowEvent::KeyboardInput {
+                    event:
+                        KeyEvent {
+                            physical_key: winit::keyboard::PhysicalKey::Code(code),
+
+                            state,
+                            ..
+                        },
+                    ..
+                } => {
+                    let pid = PhysicalInputId {
+                        device: DeviceKind::Keyboard(code as u16),
+                    };
+
+                    let pressed = state == winit::event::ElementState::Pressed;
+                    input_state.physical_buttons.insert(pid, pressed);
+                }
+                WindowEvent::MouseInput {
+                    state: btn_state,
+                    button,
+                    ..
+                } => {
+                    let pid = PhysicalInputId {
+                        device: DeviceKind::MouseButton(to_mouse_button_id(button)),
+                    };
+                    let pressed = btn_state == winit::event::ElementState::Pressed;
+                    input_state.physical_buttons.insert(pid, pressed);
+                }
+                WindowEvent::CursorMoved { position, .. } => {
+                    // optional: store absolute position }
+                    let new_x = position.x as f32;
+                    let new_y = position.y as f32;
+                    input_state.mouse_position = (new_x, new_y);
+                }
+
+                _ => (),
             }
+        });
+
+        match event {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
@@ -120,4 +171,15 @@ pub fn run_catalyst_app(mut app: App) {
     let mut main_window = CatalystRunner::new(app);
 
     event_loop.run_app(&mut main_window).unwrap();
+}
+
+fn to_mouse_button_id(button: winit::event::MouseButton) -> MouseButtonId {
+    match button {
+        winit::event::MouseButton::Left => MouseButtonId::Left,
+        winit::event::MouseButton::Right => MouseButtonId::Right,
+        winit::event::MouseButton::Middle => MouseButtonId::Middle,
+        winit::event::MouseButton::Back => MouseButtonId::Back,
+        winit::event::MouseButton::Forward => MouseButtonId::Forward,
+        winit::event::MouseButton::Other(n) => MouseButtonId::Other(n),
+    }
 }

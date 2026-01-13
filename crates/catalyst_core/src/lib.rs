@@ -63,17 +63,13 @@ impl App {
 
         // Register the Event Type so systems can read it
         world
-            .component::<Input>()
-            .add_trait::<flecs::Singleton>()
-            .set(Input::default());
-        world
             .component::<SystemEvents>()
             .add_trait::<flecs::Singleton>()
             .set(SystemEvents::default());
         world
             .component::<Time>()
-            .add_trait::<flecs::Singleton>()
-            .set(Time::default());
+            .add_trait::<flecs::Singleton>();
+        world.set(Time::default());
 
         let vec3_id = world.component_id::<ReflectVec3>();
         let vec4_id = world.component_id::<ReflectVec4>();

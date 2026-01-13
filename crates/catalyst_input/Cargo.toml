@@ -1,11 +1,9 @@
 [package]
-name = "catalyst_window"
+name = "catalyst_input"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 flecs_ecs = { workspace = true }
 catalyst_core = { workspace = true }
-catalyst_input = { workspace = true }
-winit = { workspace = true }
-log = { workspace = true }
+bitflags = "2.10.0"

@@ -1,7 +1,7 @@
 use flecs_ecs::macros::Component;
 use glam::Mat4;
 
-#[derive(Component)]
+#[derive(Component, Clone, Debug)]
 pub struct Camera {
     pub fov: f32,
     pub aspect_ratio: f32,

@@ -1,14 +1,14 @@
-use std::collections::HashMap;
 
 use catalyst_assets::{
-    asset_events::AssetLookup,
     material::{TextureData, TextureFormat},
 };
-use catalyst_core::{camera::Camera, transform::Transform};
+use catalyst_core::{
+    camera::Camera,
+    transform::{GlobalTransform},
+};
 use catalyst_window::MainWindow;
 use flecs_ecs::prelude::*;
 use glam::{Mat4, Vec3};
-use uuid::Uuid;
 use wgpu::{Device, Queue, Surface, SurfaceConfiguration, util::DeviceExt};
 
 use crate::{
@@ -406,9 +406,7 @@ pub fn register_renderings(world: &World) {
         });
 
     let mesh_query = world
-        .query::<
-            &MeshInstance,
-        >()
+        .query::<&MeshInstance>()
         .with((AssetMesh, flecs::Wildcard))
         .with((AssetMaterial, flecs::Wildcard))
         .without(Camera::id()) // Example filter
@@ -418,7 +416,12 @@ pub fn register_renderings(world: &World) {
         .build();
 
     world
-        .system::<(&Camera, &Transform, &mut RenderContext, &mut RenderTarget)>() // <()> = Run once (no entity matching)
+        .system::<(
+            &Camera,
+            &GlobalTransform,
+            &mut RenderContext,
+            &mut RenderTarget,
+        )>() // <()> = Run once (no entity matching)
         .named("Render Frame")
         .kind(flecs::pipeline::OnStore)
         //.write(RenderContext::id()) // Declare access intent
@@ -429,11 +432,17 @@ pub fn register_renderings(world: &World) {
             let view_proj = {
                 // A: View Matrix (Inverse of Camera Transform)
                 // Move the world opposite to the camera
-                let view = Mat4::look_at_rh(
-                    cam_t.translation,                               // Eye
-                    cam_t.translation + (cam_t.rotation * -Vec3::Z), // Target (Forward is -Z)
-                    Vec3::Y,                                         // Up
-                );
+                let eye = cam_t.0.transform_point3(Vec3::ZERO);
+                let forward = -cam_t.0.z_axis.truncate(); // camera looks down -Z let up = m.y_axis.truncate();
+                let up = cam_t.0.y_axis.truncate();
+
+                let view = Mat4::look_at_rh( eye, eye + forward, up, );
+
+                // let view = Mat4::look_at_rh(
+                //     cam_t.translation,                               // Eye
+                //     cam_t.translation + (cam_t.rotation * -Vec3::Z), // Target (Forward is -Z)
+                //     Vec3::Y,                                         // Up
+                // );
 
                 // B: Projection Matrix (Perspective)
                 let aspect = context.config.width as f32 / context.config.height as f32;

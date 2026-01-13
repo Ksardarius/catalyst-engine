@@ -1,5 +1,5 @@
 use flecs_ecs::prelude::*;
-use catalyst_core::transform::Transform;
+use catalyst_core::{camera::Camera, transform::Transform};
 
 use crate::{assets::{Handle, MeshData}, material::{MaterialData, TextureData}};
 
@@ -11,6 +11,7 @@ pub struct SceneData {
     
     // The Nodes (Entities)
     pub nodes: Vec<SceneNode>, 
+    pub camera: Vec<Camera>
 }
 
 #[derive(Clone, Debug)]
@@ -19,6 +20,7 @@ pub struct SceneNode {
     pub transform: Transform,
     pub mesh_index: Option<usize>, // Index into the meshes list above
     pub material_index: Option<usize>,
+    pub camera_index: Option<usize>,
     pub children: Vec<usize>,
 }
 

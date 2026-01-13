@@ -10,7 +10,10 @@ catalyst_window = { workspace = true }
 catalyst_assets = { workspace = true }
 catalyst_scene = { workspace = true }
 catalyst_renderer = { workspace = true }
+catalyst_input = { workspace = true }
 env_logger = { workspace = true }
 tokio = { workspace = true }
 rayon = { workspace = true }
 glam = { workspace = true }
+winit = { workspace = true }
+

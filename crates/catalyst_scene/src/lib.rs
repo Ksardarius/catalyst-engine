@@ -37,6 +37,7 @@ pub fn register_spawn_scenes(world: &World) {
                     for node in &scene_data.nodes {
                         let entity_cmd = world
                             .entity()
+                            // .set_name(&node.name)
                             .child_of(root_entity)
                             .set(node.transform)
                             .set(GlobalTransform::default());
@@ -51,6 +52,12 @@ pub fn register_spawn_scenes(world: &World) {
                                 if let Some(mat) = scene_data.materials.get(mat_idx) {
                                     entity_cmd.set(MaterialDefinition(mat.clone()));
                                 }
+                            }
+                        }
+
+                        if let Some(camera_idx) = node.camera_index {
+                            if let Some(camera) = scene_data.camera.get(camera_idx) {
+                                entity_cmd.set(camera.clone());
                             }
                         }
 

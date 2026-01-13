@@ -5,8 +5,8 @@ use glam::{Mat4, Quat, Vec3};
 #[flecs(meta)]
 pub struct ReflectVec3 {
     x: f32,
-    y: f32,
     z: f32,
+    y: f32,
     // Note: If you use 'glam' with SIMD enabled (default), Vec3 might be 16 bytes.
     // If your inspector values look garbled, add: _pad: f32 
 }
@@ -124,13 +124,18 @@ impl GlobalTransform {
 
 pub fn transform_propagation_system(world: &World) {
     world
-        .system_named::<(&Transform, &mut GlobalTransform, &GlobalTransform)>("transform_propagation_system")
+        .system_named::<(&Transform, &mut GlobalTransform, Option<&GlobalTransform>)>("transform_propagation_system")
         .kind(flecs::pipeline::PostUpdate)
+        .cascade()
         .term_at(2)
         .parent()
-        .cascade()
-        .each_entity(|entity, (local, global, parent_global)| {
-            global.0 = parent_global.0 * local.compute_matrix();
+        .each(|(local, global, parent_global)| {
+            if let Some(parent_global) = parent_global {
+                global.0 = parent_global.0 * local.compute_matrix();
+            } else {
+                global.0 = local.compute_matrix();
+            }
+            // global.0 = parent_global.0 * local.compute_matrix();
         });
 }
 

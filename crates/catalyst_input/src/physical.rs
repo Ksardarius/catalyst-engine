@@ -2,7 +2,7 @@ use catalyst_core::App;
 use flecs_ecs::prelude::*;
 use std::collections::HashMap;
 
-use crate::logical::{ActionId, ActionState, AxisId, AxisState};
+use crate::{context::ContextId, logical::{ActionId, ActionState, AxisId, AxisState}};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 #[repr(u16)]
@@ -31,6 +31,8 @@ pub struct PhysicalInputId {
 
 #[derive(Component, Default, Debug)]
 pub struct InputState {
+    pub active_contexts: Vec<ContextId>,
+    
     pub physical_buttons: HashMap<PhysicalInputId, bool>,
     pub physical_axes: HashMap<PhysicalInputId, f32>,
 
@@ -41,6 +43,30 @@ pub struct InputState {
     pub mouse_position: (f32, f32),
     pub mouse_delta: (f32, f32),
 }
+
+impl InputState {
+    pub fn push_context(&mut self, ctx: ContextId) {
+        self.active_contexts.push(ctx);
+    }
+
+    pub fn pop_context(&mut self) {
+        self.active_contexts.pop();
+    }
+
+    pub fn set_context(&mut self, ctx: ContextId) {
+        self.active_contexts.clear();
+        self.active_contexts.push(ctx);
+    }
+
+    pub fn just_pressed(&self, action: ActionId) -> bool {
+        if let Some(state) = self.actions.get(&action) {
+            state.phase.contains(crate::logical::ButtonPhase::PRESSED)
+        } else {
+            false
+        }
+    }
+}
+
 
 pub fn register_input_systems(app: &App) {
     app.world

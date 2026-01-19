@@ -62,6 +62,7 @@ impl AssetServer {
                 let rgba = img.to_rgba8();
 
                 Ok::<TextureData, String>(TextureData {
+                    name: path_clone.clone(),
                     width: rgba.width(),
                     height: rgba.height(),
                     pixels: rgba.into_raw(),

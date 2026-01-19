@@ -4,12 +4,14 @@ use crate::assets::Handle;
 #[derive(Clone, Copy, Debug)]
 pub enum TextureFormat {
     Rgba8Unorm, // Standard 32-bit color (0-255)
+    Rgba8UnormSrgb, // Standard 32-bit color (0-255)
     Rgba32Float, // HDR data
     Gray8,      // Grayscale (used for Roughness/Metallic masks)
 }
 
 #[derive(Component, Clone, Debug)]
 pub struct TextureData {
+    pub name: String,
     pub pixels: Vec<u8>,
     pub width: u32,
     pub height: u32,

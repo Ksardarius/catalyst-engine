@@ -8,8 +8,10 @@ use catalyst_core::{
     time::Time,
     transform::{GlobalTransform, Transform},
 };
+use catalyst_debug::{ACTION_ENABLE_DEBUG, DebugPlugin};
 use catalyst_input::{
     InputPlugin,
+    context::CTX_GAMEPLAY,
     logical::{ActionId, AxisId, ButtonPhase, InputBinding, InputMap},
     physical::{DeviceKind, InputState, PhysicalInputId},
 };
@@ -45,7 +47,7 @@ fn main() {
     app.add_plugin(AssetPlugin);
     app.add_plugin(ScenePlugin);
     app.add_plugin(RenderPlugin);
-    // app.add_plugin(DebugPlugin);
+    app.add_plugin(DebugPlugin);
 
     // Spawn the Triangle
     // app.add_startup_system(setup_scene);
@@ -147,12 +149,16 @@ fn setup_scene(world: &World) {
     world.get::<&AssetServer>(|asset_server| {
         println!("Requesting Mesh Load...");
 
-        let scene_handle = asset_server.load_scene("assets/scene4.glb");
+        let scene_handle = asset_server.load_scene("assets/simple2.glb");
         world
             .entity()
             .set(SceneRoot(scene_handle.clone()))
             .set(Transform::from_xyz(0.0, 0.0, 0.0))
             .set(GlobalTransform::default());
+
+        world.get::<&mut InputState>(|input_state| {
+            input_state.push_context(CTX_GAMEPLAY);
+        });
 
         world.get::<&mut InputMap>(|input_map| {
             input_map
@@ -162,6 +168,14 @@ fn setup_scene(world: &World) {
             input_map.bind_keyboard_button(winit::keyboard::KeyCode::KeyA as u16, ACTION_MOVE_LEFT);
             input_map
                 .bind_keyboard_button(winit::keyboard::KeyCode::KeyD as u16, ACTION_MOVE_RIGHT);
+
+            input_map
+                .bind_keyboard_button(winit::keyboard::KeyCode::Tab as u16, ACTION_ENABLE_DEBUG);
+            input_map.bind_keyboard_button_with_context(
+                winit::keyboard::KeyCode::Tab as u16,
+                ACTION_ENABLE_DEBUG,
+                catalyst_input::context::CTX_DEBUG,
+            );
         });
 
         // world

@@ -1,9 +1,9 @@
-use catalyst_core::Resource;
 use catalyst_renderer::RenderContext;
+use flecs_ecs::prelude::*;
 use egui_wgpu::RendererOptions;
 use winit::window::Window;
 
-#[derive(Resource)]
+#[derive(Component)]
 pub struct EguiState {
     pub context: egui::Context,
     pub state: egui_winit::State,

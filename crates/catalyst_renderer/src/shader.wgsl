@@ -118,6 +118,17 @@ fn getNormalFromMap(uv: vec2<f32>, world_pos: vec3<f32>, normal_geom: vec3<f32>)
     let st2 = dpdy(uv);
 
     let N = normalize(normal_geom);
+
+    // CALCULATE TANGENT
+    let T_unnormalized = Q1 * st2.y - Q2 * st1.y;
+    
+    // --- SAFETY CHECK START ---
+    // If UVs are collapsed (length is 0), fallback to geometric normal to avoid NaN
+    if (dot(T_unnormalized, T_unnormalized) < 0.000001) {
+        return N; 
+    }
+
+
     let T = normalize(Q1 * st2.y - Q2 * st1.y);
     let B = -normalize(cross(N, T));
     let TBN = mat3x3<f32>(T, B, N);
@@ -164,6 +175,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     
     // Metallic/Roughness (Packed: G=Roughness, B=Metallic)
     let mr_sample = textureSample(t_metallic_roughness, s_metallic_roughness, in.uv);
+    let ao = mr_sample.r;
     let roughness = mr_sample.g * material.roughness; 
     let metallic = mr_sample.b * material.metallic;
 
@@ -230,8 +242,19 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // --- 4. AMBIENT & OUTPUT ---
-    let ambient = vec3<f32>(0.03) * albedo;
-    let color = ambient + Lo;
+    let ambient = vec3<f32>(0.03) * albedo * ao;
+    var color = ambient + Lo;
+
+    // --- STEP 5: TONE MAPPING (Reinhard) ---
+    // Maps High Dynamic Range (HDR) values (e.g. 10.0) down to 0.0 - 1.0 range
+    color = color / (color + vec3<f32>(1.0));
+
+    // --- STEP 6: GAMMA CORRECTION ---
+    // Convert Linear -> sRGB for the monitor
+    // Note: If you configured your specific Surface texture format to "Srgb" in Rust, 
+    // the GPU does this automatically. But usually, we output to a Unorm texture 
+    // and do this manually.
+    color = pow(color, vec3<f32>(1.0 / 2.2));
 
     return vec4<f32>(color, 1.0);
 }

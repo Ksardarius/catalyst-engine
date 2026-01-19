@@ -6,14 +6,14 @@ pub mod camera;
 pub mod input;
 pub mod time;
 pub mod transform;
+pub mod pipeline;
 
 pub use input::*;
 
 use crate::{
-    time::Time,
-    transform::{
+    pipeline::define_pipeline_stages, time::Time, transform::{
         GlobalTransform, ReflectQuat, ReflectVec3, ReflectVec4, Transform, transform_propagation_system
-    },
+    }
 };
 
 #[derive(Component, Clone)]
@@ -55,7 +55,7 @@ impl App {
             .build()
             .unwrap();
 
-        let world = World::new();
+        let mut world = World::new();
         world
             .component::<IoTaskPool>()
             .add_trait::<flecs::Singleton>()
@@ -70,6 +70,8 @@ impl App {
             .component::<Time>()
             .add_trait::<flecs::Singleton>();
         world.set(Time::default());
+
+        define_pipeline_stages(&mut world);
 
         let vec3_id = world.component_id::<ReflectVec3>();
         let vec4_id = world.component_id::<ReflectVec4>();

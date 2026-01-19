@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{any::Any, path::Path};
 
 use catalyst_core::{
     camera::{self, Camera},
@@ -30,43 +30,81 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
     let mut texture_artifacts = Vec::new();
     let mut texture_map = Vec::new(); // Maps GLTF Image Index -> Our Handle
 
-    for image in images {
-        let converted_pixels = match image.format {
-            // CASE A: It's already RGBA (Good!)
-            Format::R8G8B8A8 => {
-                image.pixels // No work needed, just take the bytes
+    for image in document.images() {
+        match image.source() {
+            gltf::image::Source::View { view, .. } => {
+                let buffer = &buffers[view.buffer().index()];
+                
+                let name = image.name().unwrap_or("GLTF Image");
+                
+                let start = view.offset();
+                let end = start + view.length();
+                let image_data = &buffer[start..end];
+
+                // Decode image data using the `image` crate
+                let img = image::load_from_memory(image_data)
+                    .map_err(|e| format!("Failed to decode image: {}", e))?;
+                
+
+                let img = img.to_rgba8();
+
+                let width = img.width();
+                let height = img.height();
+                let pixels = img.into_raw(); // Get raw pixel data
+
+                // Create our TextureData
+                let image = TextureData {
+                    name: name.to_string(),
+                    width,
+                    height,
+                    pixels,
+                    format: TextureFormat::Rgba8Unorm,
+                };
+
+                // Store the texture data
+                let handle = Handle::<TextureData>::new();
+                texture_artifacts.push((handle.clone(), image));
+                texture_map.push(handle);
             }
+            gltf::image::Source::Uri { .. } => {}
+        }
 
-            // CASE B: It's RGB (The source of your crash)
-            // We must convert 3 bytes -> 4 bytes manually
-            Format::R8G8B8 => {
-                let pixel_count = image.width * image.height;
-                let mut rgba_data = Vec::with_capacity((pixel_count * 4) as usize);
+        // let converted_pixels = match image.format {
+        //     // CASE A: It's already RGBA (Good!)
+        //     Format::R8G8B8A8 => {
+        //         image.pixels // No work needed, just take the bytes
+        //     }
 
-                // Iterate over chunks of 3 bytes (R, G, B)
-                for chunk in image.pixels.chunks_exact(3) {
-                    rgba_data.extend_from_slice(chunk); // Copy R, G, B
-                    rgba_data.push(255); // Add A (Full Opacity)
-                }
-                rgba_data // Return the new vector
-            }
+        //     // CASE B: It's RGB (The source of your crash)
+        //     // We must convert 3 bytes -> 4 bytes manually
+        //     Format::R8G8B8 => {
+        //         let pixel_count = image.width * image.height;
+        //         let mut rgba_data = Vec::with_capacity((pixel_count * 4) as usize);
 
-            // Handle other formats (R8, R16, etc.) if necessary
-            _ => panic!("Unsupported texture format: {:?}", image.format),
-        };
+        //         // Iterate over chunks of 3 bytes (R, G, B)
+        //         for chunk in image.pixels.chunks_exact(3) {
+        //             rgba_data.extend_from_slice(chunk); // Copy R, G, B
+        //             rgba_data.push(255); // Add A (Full Opacity)
+        //         }
+        //         rgba_data // Return the new vector
+        //     }
 
-        // Convert GLTF Image to our format
-        // Note: gltf::import automatically decodes PNG/JPG bytes into pixels for us!
-        let tex_data = TextureData {
-            width: image.width,
-            height: image.height,
-            pixels: converted_pixels,          // Raw RGBA bytes
-            format: TextureFormat::Rgba8Unorm, // GLTF is almost always RGBA8
-        };
+        //     // Handle other formats (R8, R16, etc.) if necessary
+        //     _ => panic!("Unsupported texture format: {:?}", image.format),
+        // };
 
-        let handle = Handle::<TextureData>::new();
-        texture_artifacts.push((handle.clone(), tex_data));
-        texture_map.push(handle);
+        // // Convert GLTF Image to our format
+        // // Note: gltf::import automatically decodes PNG/JPG bytes into pixels for us!
+        // let tex_data = TextureData {
+        //     width: image.width,
+        //     height: image.height,
+        //     pixels: converted_pixels,          // Raw RGBA bytes
+        //     format: TextureFormat::Rgba8Unorm, // GLTF is almost always RGBA8
+        // };
+
+        // let handle = Handle::<TextureData>::new();
+        // texture_artifacts.push((handle.clone(), tex_data));
+        // texture_map.push(handle);
     }
 
     // --- STEP 2: MATERIALS ---
@@ -79,21 +117,25 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
         // 1. Resolve Texture Handle
         let diffuse_handle = pbr.base_color_texture().map(|info| {
             let idx = info.texture().source().index();
+            texture_artifacts[idx].1.format = TextureFormat::Rgba8UnormSrgb;
             texture_map[idx].clone() // <--- The Link!
         });
 
         let roughness_handle = pbr.metallic_roughness_texture().map(|info| {
             let idx = info.texture().source().index();
+            texture_artifacts[idx].1.format = TextureFormat::Rgba8Unorm;
             texture_map[idx].clone() // <--- The Link!
         });
 
         let normal_handle = mat.normal_texture().map(|info| {
             let idx = info.texture().source().index();
+            texture_artifacts[idx].1.format = TextureFormat::Rgba8Unorm;
             texture_map[idx].clone() // <--- The Link!
         });
 
         let occlusion_handle = mat.occlusion_texture().map(|info| {
             let idx = info.texture().source().index();
+            texture_artifacts[idx].1.format = TextureFormat::Rgba8Unorm;
             texture_map[idx].clone() // <--- The Link!
         });
 

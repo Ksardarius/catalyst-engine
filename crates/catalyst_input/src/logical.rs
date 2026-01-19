@@ -1,4 +1,7 @@
-use crate::physical::{InputState, PhysicalInputId};
+use crate::{
+    context::{CTX_GAMEPLAY, ContextId},
+    physical::{InputState, PhysicalInputId},
+};
 use catalyst_core::App;
 use flecs_ecs::prelude::*;
 
@@ -15,6 +18,7 @@ pub enum BindingKind {
 
 #[derive(Clone, Debug)]
 pub struct InputBinding {
+    pub context: ContextId,
     pub physical: PhysicalInputId,
     pub kind: BindingKind,
 }
@@ -46,11 +50,21 @@ pub struct InputMap {
 
 impl InputMap {
     pub fn bind_keyboard_button(&mut self, key_code: u16, action: ActionId) -> &mut Self {
+        self.bind_keyboard_button_with_context(key_code, action, CTX_GAMEPLAY)
+    }
+
+    pub fn bind_keyboard_button_with_context(
+        &mut self,
+        key_code: u16,
+        action: ActionId,
+        context: ContextId,
+    ) -> &mut Self {
         self.bindings.push(InputBinding {
             physical: PhysicalInputId {
                 device: crate::physical::DeviceKind::Keyboard(key_code),
             },
             kind: BindingKind::Button { action },
+            context,
         });
 
         self
@@ -81,6 +95,10 @@ pub fn register_sys_input_map(app: &mut App) {
 
                 // Apply bindings
                 for binding in &input_map.bindings {
+                    if !input_state.active_contexts.contains(&binding.context) {
+                        continue;
+                    }
+
                     match binding.kind {
                         BindingKind::Button { action } => {
                             let pressed = *input_state

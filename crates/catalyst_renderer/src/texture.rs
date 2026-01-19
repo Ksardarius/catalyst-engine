@@ -22,8 +22,11 @@ impl GpuTexture {
         label: Option<&str>,
     ) -> Self {
         let wgpu_format = match data.format {
-            catalyst_assets::material::TextureFormat::Rgba8Unorm => {
+            catalyst_assets::material::TextureFormat::Rgba8UnormSrgb => {
                 wgpu::TextureFormat::Rgba8UnormSrgb
+            }
+            catalyst_assets::material::TextureFormat::Rgba8Unorm => {
+                wgpu::TextureFormat::Rgba8Unorm
             }
             catalyst_assets::material::TextureFormat::Rgba32Float => {
                 wgpu::TextureFormat::Rgba32Float
@@ -72,10 +75,13 @@ impl GpuTexture {
 
         // 4. Create Sampler (How to filter pixels - Linear/Nearest)
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("Texture Sampler"),
             address_mode_u: wgpu::AddressMode::Repeat, // Wrap texture
             address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear, // Smooth close up
             min_filter: wgpu::FilterMode::Linear, // Smooth far away
+            mipmap_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
 

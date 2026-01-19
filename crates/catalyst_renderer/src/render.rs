@@ -1,11 +1,5 @@
-
-use catalyst_assets::{
-    material::{TextureData, TextureFormat},
-};
-use catalyst_core::{
-    camera::Camera,
-    transform::{GlobalTransform},
-};
+use catalyst_assets::material::{TextureData, TextureFormat};
+use catalyst_core::{camera::Camera, pipeline::{PhasePresent, PhaseRender3D}, transform::GlobalTransform};
 use catalyst_window::MainWindow;
 use flecs_ecs::prelude::*;
 use glam::{Mat4, Vec3};
@@ -312,10 +306,11 @@ pub fn register_renderings(world: &World) {
                         &device,
                         &queue,
                         &TextureData {
+                            name: "Default White Pixel".to_string(),
                             width: 1,
                             height: 1,
                             // RGBA: (255, 255, 255, 255) -> Solid White
-                            pixels: vec![255, 255, 255, 255],
+                            pixels: vec![0, 111, 255, 255],
                             format: TextureFormat::Rgba8Unorm,
                         },
                         Some("Default White Texture"),
@@ -341,7 +336,7 @@ pub fn register_renderings(world: &World) {
                             color: [0.0; 4],
                         }; 4],
                         camera_pos: [0.0, 0.0, 0.0],
-                        active_lights: 0,
+                        active_lights: 4,
                     };
 
                     let scene_data_buffer =
@@ -423,7 +418,7 @@ pub fn register_renderings(world: &World) {
             &mut RenderTarget,
         )>() // <()> = Run once (no entity matching)
         .named("Render Frame")
-        .kind(flecs::pipeline::OnStore)
+        .kind(PhaseRender3D)
         //.write(RenderContext::id()) // Declare access intent
         //.write(RenderTarget::id())
         .each_entity(move |entity, (_cam, cam_t, context, target)| {
@@ -436,7 +431,7 @@ pub fn register_renderings(world: &World) {
                 let forward = -cam_t.0.z_axis.truncate(); // camera looks down -Z let up = m.y_axis.truncate();
                 let up = cam_t.0.y_axis.truncate();
 
-                let view = Mat4::look_at_rh( eye, eye + forward, up, );
+                let view = Mat4::look_at_rh(eye, eye + forward, up);
 
                 // let view = Mat4::look_at_rh(
                 //     cam_t.translation,                               // Eye
@@ -500,6 +495,34 @@ pub fn register_renderings(world: &World) {
                     &context.camera_buffer,                                // Target
                     0,                                                     // Offset
                     bytemuck::cast_slice(&[view_proj.to_cols_array_2d()]), // Data
+                );
+
+                let debug_light = GpuPointLight {
+                    position: [2.0, 2.0, 2.0, 0.0], // .w can be ignored or used for radius
+                    color: [1.0, 0.2, 0.2, 10.0],   // Red color, High Intensity (10.0)
+                };
+
+                // Create 3 empty lights
+                let empty_light = GpuPointLight {
+                    position: [0.0; 4],
+                    color: [0.0; 4],
+                };
+
+                // Update lights
+                let light_data = LightUniforms {
+                    sun_direction: [0.0, -1.0, -0.5, 5.0],
+                    sun_color: [1.0, 1.0, 1.0, 0.0],
+                    point_lights: [debug_light, empty_light, empty_light, empty_light],
+                    // camera_pos: [0.0, 0.0, 0.0, 0.0],
+                    //camera_pos: cam_t.0.w_axis.to_array(),
+                    camera_pos: cam_t.0.transform_point3(Vec3::ZERO).to_array(),
+                    active_lights: 1,
+                };
+
+                context.queue.write_buffer(
+                    &context.scene_data_buffer,
+                    0,
+                    bytemuck::bytes_of(&light_data),
                 );
 
                 render_pass.set_bind_group(0, &context.global_bind_group, &[]);
@@ -612,7 +635,7 @@ pub fn register_renderings(world: &World) {
 
     world
         .system_named::<&mut RenderTarget>("end frame")
-        .kind(flecs::pipeline::OnStore)
+        .kind(PhasePresent)
         .each(|target| {
             if let Some(frame) = target.texture.take() {
                 frame.present();

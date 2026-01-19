@@ -1,5 +1,5 @@
 use catalyst_assets::{
-    MaterialDefinition, MeshDefinition, asset_events::AssetLookup, assets::Handle, scene::SceneData,
+    MaterialDefinition, MeshDefinition, assets::Handle, scene::SceneData,
 };
 use catalyst_core::{App, Plugin, Source, transform::GlobalTransform};
 use flecs_ecs::prelude::*;

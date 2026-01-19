@@ -7,7 +7,9 @@ members = [
     "crates/catalyst_window", 
     "crates/catalyst_assets",
     "crates/catalyst_scene",
-    "crates/catalyst_renderer", "crates/catalyst_input",
+    "crates/catalyst_renderer", 
+    "crates/catalyst_input",
+    "crates/catalyst_debug",
     ]
 
 [workspace.dependencies]
@@ -33,4 +35,5 @@ catalyst_assets = { path = "crates/catalyst_assets" }
 catalyst_scene = { path = "crates/catalyst_scene" }
 catalyst_renderer = { path = "crates/catalyst_renderer" }
 catalyst_input = { path = "crates/catalyst_input" }
+catalyst_debug = { path = "crates/catalyst_debug" }
 

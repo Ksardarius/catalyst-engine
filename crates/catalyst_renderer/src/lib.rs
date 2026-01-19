@@ -11,6 +11,9 @@ pub mod mesh;
 mod render;
 mod texture;
 
+pub use render::{RenderContext, RenderTarget};
+pub use texture::GpuTexture;
+
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {

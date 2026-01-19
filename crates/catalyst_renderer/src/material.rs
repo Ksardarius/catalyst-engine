@@ -59,86 +59,81 @@ pub fn register_material_handlers(world: &World) {
         .kind(flecs::pipeline::OnStore)
         .each_entity(|entity, (mat_data, context, mat_layout)| {
             let world = entity.world();
-            let bind_group = create_material_bind_group(context, mat_layout, mat_data, &world);
-            entity.set(GpuMaterial { bind_group });
+
+            let gpu_uniform = GpuMaterialUniform::from(mat_data.settings.clone());
+            let uniform_buffer =
+                context
+                    .device
+                    .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Material Uniforms"),
+                        contents: bytemuck::cast_slice(&[gpu_uniform]),
+                        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    });
+
+            // B. Find Texture (or Fallback)
+            let diffuse_binding = mat_data
+                .diffuse_texture
+                .as_ref()
+                .and_then(|tex_handle| tex_handle.try_get_entity(&world))
+                .and_then(|texture_entity| texture_entity.try_get::<&GpuTexture>(|tx| tx.clone()));
+
+            let roughness_binding = mat_data
+                .metallic_roughness_texture
+                .as_ref()
+                .and_then(|tex_handle| tex_handle.try_get_entity(&world))
+                .and_then(|texture_entity| texture_entity.try_get::<&GpuTexture>(|tx| tx.clone()));
+
+            let normal_binding = mat_data
+                .normal_texture
+                .as_ref()
+                .and_then(|tex_handle| tex_handle.try_get_entity(&world))
+                .and_then(|texture_entity| texture_entity.try_get::<&GpuTexture>(|tx| tx.clone()));
+
+            if let (Some(diffuse_texture), Some(roughness_texture), Some(normal_texture)) =
+                (diffuse_binding, roughness_binding, normal_binding)
+            {
+                let bind_group = context
+                    .device
+                    .create_bind_group(&wgpu::BindGroupDescriptor {
+                        label: Some("Material Bind Group"),
+                        layout: &mat_layout.0,
+                        entries: &[
+                            wgpu::BindGroupEntry {
+                                binding: 0,
+                                resource: uniform_buffer.as_entire_binding(),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 1,
+                                resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 3,
+                                resource: wgpu::BindingResource::TextureView(
+                                    &roughness_texture.view,
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 4,
+                                resource: wgpu::BindingResource::Sampler(
+                                    &roughness_texture.sampler,
+                                ),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 5,
+                                resource: wgpu::BindingResource::TextureView(&normal_texture.view),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 6,
+                                resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
+                            },
+                        ],
+                    });
+
+                entity.set(GpuMaterial { bind_group });
+            };
         });
-}
-
-fn create_material_bind_group(
-    context: &mut RenderContext,
-    layout: &MaterialLayout,
-    mat_data: &MaterialData,
-    world: &World,
-) -> wgpu::BindGroup {
-    // A. Create Uniform Buffer (Settings)
-    let gpu_uniform = GpuMaterialUniform::from(mat_data.settings.clone());
-    let uniform_buffer = context
-        .device
-        .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Material Uniforms"),
-            contents: bytemuck::cast_slice(&[gpu_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-    // B. Find Texture (or Fallback)
-    let mut binding = mat_data
-        .diffuse_texture
-        .as_ref()
-        .and_then(|tex_handle| tex_handle.try_get_entity(world))
-        .and_then(|texture_entity| texture_entity.try_get::<&GpuTexture>(|tx| tx.clone()));
-    let diffuse_texture = binding.get_or_insert(context.default_diffuse.clone());
-
-    let mut binding = mat_data
-        .metallic_roughness_texture
-        .as_ref()
-        .and_then(|tex_handle| tex_handle.try_get_entity(world))
-        .and_then(|texture_entity| texture_entity.try_get::<&GpuTexture>(|tx| tx.clone()));
-    let roughness_texture = binding.get_or_insert(context.default_diffuse.clone());
-
-    let mut binding = mat_data
-        .normal_texture
-        .as_ref()
-        .and_then(|tex_handle| tex_handle.try_get_entity(world))
-        .and_then(|texture_entity| texture_entity.try_get::<&GpuTexture>(|tx| tx.clone()));
-    let normal_texture = binding.get_or_insert(context.default_diffuse.clone());
-
-    // C. Create Bind Group
-    let bind_group = context
-        .device
-        .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("Material Bind Group"),
-            layout: &layout.0,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&roughness_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&roughness_texture.sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: wgpu::BindingResource::TextureView(&normal_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: wgpu::BindingResource::Sampler(&normal_texture.sampler),
-                },
-            ],
-        });
-
-    bind_group
 }

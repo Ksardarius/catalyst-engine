@@ -1,8 +1,13 @@
-use catalyst_core::{App, Plugin, SystemEvents, time::Time};
+use catalyst_core::{
+    App, Plugin, SystemEvents,
+    pipeline::{PhysicsPipeline, PhysicsPrepare},
+    time::{PhysicsTime, Time},
+};
 use catalyst_input::physical::{DeviceKind, InputState, MouseButtonId, PhysicalInputId};
 use flecs_ecs::{
-    core::{WorldGet, flecs},
+    core::{WorldGet, flecs, world},
     macros::Component,
+    prelude::ComponentId,
 };
 use winit::{
     application::ApplicationHandler,
@@ -38,6 +43,37 @@ impl Plugin for WindowPlugin {
         app.world
             .component::<MainWindow>()
             .add_trait::<flecs::Singleton>();
+    }
+}
+
+impl CatalystRunner {
+    fn run_physics_loop(&mut self) {
+        let mut steps_to_run = 0;
+        let mut fixed_dt = 0.0;
+        let max_steps_per_frame = 4; // prevents spiral-of-death
+
+        // --------------------------------------------------------- // Determine how many physics steps to run // ---------------------------------------------------------
+        self.app.world.get::<&mut PhysicsTime>(|pt| {
+            fixed_dt = pt.fixed_dt;
+            while pt.accumulator >= fixed_dt {
+                pt.accumulator -= fixed_dt;
+                steps_to_run += 1;
+                if steps_to_run >= max_steps_per_frame {
+                    // Clamp to avoid runaway catch-up
+                    break;
+                }
+            }
+        });
+
+        // --------------------------------------------------------- // Run physics steps // ---------------------------------------------------------
+        for _ in 0..steps_to_run {
+            self.run_physics_pipeline(fixed_dt);
+        }
+    }
+
+    fn run_physics_pipeline(&mut self, dt: f32) {
+        // let pipeline = self.app.world.lookup("physics_pipeline");
+        self.app.world.run_pipeline_time(PhysicsPipeline, dt);
     }
 }
 
@@ -141,9 +177,18 @@ impl ApplicationHandler for CatalystRunner {
                 event_loop.exit();
             }
             WindowEvent::RedrawRequested => {
-                self.app.world.get::<&mut Time>(|time| {
+                let dt = self.app.world.get::<&mut Time>(|time| {
                     time.update();
+                    time.delta_seconds()
                 });
+
+                // --------------------------------------------------------- // 2. Accumulate physics time // ---------------------------------------------------------
+                self.app.world.get::<&mut PhysicsTime>(|pt| {
+                    pt.accumulator += dt;
+                });
+
+                // --------------------------------------------------------- // 3. Run physics (fixed timestep) // ---------------------------------------------------------
+                self.run_physics_loop();
 
                 // 2. Run the Systems
                 self.app.update();

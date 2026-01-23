@@ -37,3 +37,28 @@ impl Time {
         self.startup.elapsed().as_secs_f32()
     }
 }
+
+#[derive(Component)]
+pub struct PhysicsTime {
+    pub accumulator: f32,
+    pub fixed_dt: f32,
+}
+
+impl Default for PhysicsTime {
+    fn default() -> Self {
+        Self { accumulator: 0.0, fixed_dt: 1.0 / 60.0 }
+    }
+}
+
+impl PhysicsTime {
+    pub fn should_step(&mut self, dt: f32) -> bool {
+        self.accumulator += dt;
+        if self.accumulator >= self.fixed_dt {
+            self.accumulator -= self.fixed_dt;
+            true
+        } else {
+            false
+        }
+    }
+}
+

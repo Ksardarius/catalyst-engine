@@ -7,11 +7,12 @@ pub mod input;
 pub mod time;
 pub mod transform;
 pub mod pipeline;
+pub mod physics;
 
 pub use input::*;
 
 use crate::{
-    pipeline::define_pipeline_stages, time::Time, transform::{
+    pipeline::define_pipeline_stages, time::{PhysicsTime, Time}, transform::{
         GlobalTransform, ReflectQuat, ReflectVec3, ReflectVec4, Transform, transform_propagation_system
     }
 };
@@ -70,6 +71,11 @@ impl App {
             .component::<Time>()
             .add_trait::<flecs::Singleton>();
         world.set(Time::default());
+
+        world
+            .component::<PhysicsTime>()
+            .add_trait::<flecs::Singleton>();
+        world.set(PhysicsTime::default());
 
         define_pipeline_stages(&mut world);
 

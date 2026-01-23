@@ -1,7 +1,14 @@
 use catalyst_assets::{
-    MaterialDefinition, MeshDefinition, assets::Handle, scene::SceneData,
+    MaterialDefinition, MeshDefinition,
+    assets::Handle,
+    physics::PhysicsShape,
+    scene::{SceneData, SceneNode},
 };
-use catalyst_core::{App, Plugin, Source, transform::GlobalTransform};
+use catalyst_core::{
+    App, Plugin, Source,
+    physics::{ColliderDefinition, ColliderShape, RigidBodyDefinition},
+    transform::{GlobalTransform, Transform},
+};
 use flecs_ecs::prelude::*;
 
 pub struct ScenePlugin;
@@ -61,6 +68,35 @@ pub fn register_spawn_scenes(world: &World) {
                             }
                         }
 
+                        if let Some(ref p) = node.physics {
+                            if let Some(body_type) = p.physics_body.clone() {
+                                entity_cmd.set(RigidBodyDefinition {
+                                    body_type: body_type.into(),
+                                    mass: p.physics_mass,
+                                    gravity_scale: p.physics_gravity_scale.unwrap_or(1.0),
+                                    linear_damping: p.physics_linear_damping.unwrap_or(0.0),
+                                    angular_damping: p.physics_angular_damping.unwrap_or(0.0),
+                                });
+                            }
+
+                            if let Some(shape) = p.physics_shape.clone() {
+                                let collider = ColliderDefinition {
+                                    shape: build_collider_shape(node, shape, scene_data),
+                                    is_trigger: p.physics_is_trigger.unwrap_or(false),
+                                    offset: Transform::default(),
+                                    layer: p.physics_layer.unwrap_or(0),
+                                    mask: p.physics_mask.unwrap_or(u32::MAX),
+                                };
+                                entity_cmd.set(collider);
+                            }
+
+                            if let Some(material_name) = &p.physics_material {
+                                if let Some(mat) = scene_data.physics_materials.get(material_name) {
+                                    entity_cmd.set(mat.clone());
+                                }
+                            }
+                        }
+
                         node_entities.push(entity_cmd);
                     }
 
@@ -77,4 +113,49 @@ pub fn register_spawn_scenes(world: &World) {
                 });
             }
         });
+}
+
+fn build_collider_shape(
+    node: &SceneNode,
+    shape: PhysicsShape,
+    scene_data: &SceneData,
+) -> ColliderShape {
+    match shape {
+        PhysicsShape::Box => {
+            let scale = node.transform.scale;
+            ColliderShape::Box {
+                hx: scale.x * 0.5,
+                hy: scale.y * 0.5,
+                hz: scale.z * 0.5,
+            }
+        }
+        PhysicsShape::Sphere => {
+            let scale = node.transform.scale;
+            ColliderShape::Sphere {
+                radius: scale.max_element() * 0.5,
+            }
+        }
+        PhysicsShape::Capsule => {
+            let scale = node.transform.scale;
+            ColliderShape::Capsule {
+                radius: (scale.x.min(scale.z)) * 0.5,
+                height: scale.y,
+            }
+        }
+        // PhysicsShape::Convex | PhysicsShape::Mesh => {
+        //     let mesh = scene_data.meshes.get(node.mesh_index.unwrap()).unwrap();
+        //     let vertices = mesh.vertices.clone();
+        //     let indices = mesh.indices.clone();
+
+        //     if shape == PhysicsShape::Mesh {
+        //         ColliderShape::Mesh { vertices, indices }
+        //     } else {
+        //         ColliderShape::Convex { vertices }
+        //     }
+        // }
+        PhysicsShape::Convex | PhysicsShape::Mesh => {
+            todo!("Should implement Convex and Mesh collider shapes")
+        }
+        PhysicsShape::Unknown => panic!("Unknown collider shape"),
+    }
 }

@@ -1,0 +1,13 @@
+[package]
+name = "catalyst_physics"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+catalyst_core = { workspace = true }
+glam = { workspace = true }
+uuid = { workspace = true }
+flecs_ecs = { workspace = true }
+nalgebra = { workspace = true }
+rapier3d = "0.32"
+bytemuck = "1.24"

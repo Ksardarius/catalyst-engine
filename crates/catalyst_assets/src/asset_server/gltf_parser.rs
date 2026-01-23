@@ -1,4 +1,4 @@
-use std::{any::Any, path::Path};
+use std::{any::Any, collections::HashMap, path::Path};
 
 use catalyst_core::{
     camera::{self, Camera},
@@ -8,9 +8,7 @@ use glam::Quat;
 use gltf::image::Format;
 
 use crate::{
-    assets::{Handle, MeshData, Vertex},
-    material::{MaterialData, MaterialSettings, TextureData, TextureFormat},
-    scene::SceneData,
+    assets::{Handle, MeshData, Vertex}, material::{MaterialData, MaterialSettings, TextureData, TextureFormat}, physics::PhysicsExtras, scene::SceneData
 };
 
 type GltfPayload = (
@@ -34,9 +32,9 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
         match image.source() {
             gltf::image::Source::View { view, .. } => {
                 let buffer = &buffers[view.buffer().index()];
-                
+
                 let name = image.name().unwrap_or("GLTF Image");
-                
+
                 let start = view.offset();
                 let end = start + view.length();
                 let image_data = &buffer[start..end];
@@ -44,7 +42,6 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
                 // Decode image data using the `image` crate
                 let img = image::load_from_memory(image_data)
                     .map_err(|e| format!("Failed to decode image: {}", e))?;
-                
 
                 let img = img.to_rgba8();
 
@@ -237,7 +234,19 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
             .and_then(|m| m.primitives().next())
             .and_then(|p| p.material().index());
 
-        let camera_index = node.camera().map(|cam|cam.index());
+        let camera_index = node.camera().map(|cam| cam.index());
+
+        // physics
+        let physics = if let Some(extras) = node.extras() {
+            let a = extras.get();
+            if let Ok(json) = serde_json::from_str::<PhysicsExtras>(extras.get()) {
+                Some(json)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         scene_nodes.push(crate::scene::SceneNode {
             name: node.name().unwrap_or("Node").to_string(),
@@ -246,6 +255,7 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
             material_index,
             camera_index,
             children: node.children().map(|c| c.index()).collect(),
+            physics
         });
     }
 
@@ -269,6 +279,7 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
         materials: material_map,
         meshes: mesh_map,
         camera: cameras,
+        physics_materials: HashMap::new(),
     };
 
     Ok((

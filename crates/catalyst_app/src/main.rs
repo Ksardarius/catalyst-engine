@@ -15,6 +15,7 @@ use catalyst_input::{
     logical::{ActionId, AxisId, ButtonPhase, InputBinding, InputMap},
     physical::{DeviceKind, InputState, PhysicalInputId},
 };
+use catalyst_physics::PhysicsPlugin;
 use catalyst_renderer::RenderPlugin;
 use catalyst_scene::{ScenePlugin, SceneRoot};
 // use catalyst_debug::DebugPlugin;
@@ -48,6 +49,7 @@ fn main() {
     app.add_plugin(ScenePlugin);
     app.add_plugin(RenderPlugin);
     app.add_plugin(DebugPlugin);
+    app.add_plugin(PhysicsPlugin);
 
     // Spawn the Triangle
     // app.add_startup_system(setup_scene);
@@ -149,7 +151,7 @@ fn setup_scene(world: &World) {
     world.get::<&AssetServer>(|asset_server| {
         println!("Requesting Mesh Load...");
 
-        let scene_handle = asset_server.load_scene("assets/simple2.glb");
+        let scene_handle = asset_server.load_scene("assets/simple11.glb");
         world
             .entity()
             .set(SceneRoot(scene_handle.clone()))

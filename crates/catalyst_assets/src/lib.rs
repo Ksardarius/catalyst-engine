@@ -13,6 +13,7 @@ pub mod assets;
 mod components;
 pub mod material;
 pub mod scene;
+pub mod physics;
 
 pub use components::{MaterialDefinition, MeshDefinition};
 

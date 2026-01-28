@@ -4,7 +4,7 @@ use std::mem;
 use bytemuck::{Pod, Zeroable};
 use catalyst_assets::{
     MeshDefinition,
-    assets::{Handle, MeshData},
+    assets::{MeshData},
 };
 use catalyst_core::transform::GlobalTransform;
 use wgpu::util::DeviceExt;
@@ -150,7 +150,7 @@ pub fn register_mesh_handlers(world: &World) {
                 .device
                 .create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("Mesh Bind Group"),
-                    layout: &context.mesh_bind_group_layout, // Defined in Renderer::new()
+                    layout: &context.pbr_program.mesh_layout, // Defined in Renderer::new()
                     entries: &[wgpu::BindGroupEntry {
                         binding: 0,
                         resource: buffer.as_entire_binding(),

@@ -16,3 +16,4 @@ catalyst_core = { workspace = true }
 catalyst_renderer = { workspace = true }
 catalyst_window = { workspace = true }
 catalyst_input = { workspace = true }
+catalyst_physics = { workspace = true }

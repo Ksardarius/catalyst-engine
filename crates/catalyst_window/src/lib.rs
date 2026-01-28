@@ -1,16 +1,16 @@
 use catalyst_core::{
     App, Plugin, SystemEvents,
-    pipeline::{PhysicsPipeline, PhysicsPrepare},
+    pipeline::{PhysicsPipeline},
     time::{PhysicsTime, Time},
 };
 use catalyst_input::physical::{DeviceKind, InputState, MouseButtonId, PhysicalInputId};
 use flecs_ecs::{
     core::{WorldGet, flecs, world},
     macros::Component,
-    prelude::ComponentId,
 };
 use winit::{
     application::ApplicationHandler,
+    dpi::LogicalSize,
     event::{KeyEvent, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{CursorGrabMode, Window},
@@ -81,7 +81,11 @@ impl ApplicationHandler for CatalystRunner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         self.app.world.set(MainWindow(
             event_loop
-                .create_window(Window::default_attributes().with_title("Catalyst Engine"))
+                .create_window(
+                    Window::default_attributes()
+                        .with_inner_size(LogicalSize::new(1920, 1080))
+                        .with_title("Catalyst Engine"),
+                )
                 .map(|w| {
                     w.set_cursor_grab(CursorGrabMode::Locked).unwrap();
                     w.set_cursor_visible(false);

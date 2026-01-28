@@ -48,8 +48,10 @@ fn main() {
     app.add_plugin(AssetPlugin);
     app.add_plugin(ScenePlugin);
     app.add_plugin(RenderPlugin);
-    app.add_plugin(DebugPlugin);
     app.add_plugin(PhysicsPlugin);
+
+    // debug plugin must be last
+    app.add_plugin(DebugPlugin);
 
     // Spawn the Triangle
     // app.add_startup_system(setup_scene);
@@ -151,7 +153,7 @@ fn setup_scene(world: &World) {
     world.get::<&AssetServer>(|asset_server| {
         println!("Requesting Mesh Load...");
 
-        let scene_handle = asset_server.load_scene("assets/simple11.glb");
+        let scene_handle = asset_server.load_scene("assets/simple12.glb");
         world
             .entity()
             .set(SceneRoot(scene_handle.clone()))

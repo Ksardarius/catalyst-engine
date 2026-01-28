@@ -1,14 +1,14 @@
 use catalyst_core::{App, Plugin};
 
 use crate::{
-    material::register_material_handlers, mesh::register_mesh_handlers, render::register_renderings, texture::register_texture_handlers,
+    material::register_material_handlers, mesh::register_mesh_handlers, programs::debug_lines_program::register_debug_lines_program_systems, render::register_renderings, texture::register_texture_handlers
 };
 
-mod camera;
-mod light;
+mod global_resources;
 mod material;
 pub mod mesh;
-mod render;
+mod programs;
+pub mod render;
 mod texture;
 
 pub use render::{RenderContext, RenderTarget};
@@ -18,10 +18,11 @@ pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
     fn build(&self, app: &mut App) {
-        register_renderings(&app.world);
+        register_renderings(app);
         register_mesh_handlers(&app.world);
         register_material_handlers(&app.world);
         register_texture_handlers(&app.world);
+        register_debug_lines_program_systems(app);
     }
 }
 

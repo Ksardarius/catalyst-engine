@@ -18,9 +18,10 @@ use catalyst_window::MainWindow;
 use egui_wgpu::ScreenDescriptor;
 use wgpu::CommandEncoderDescriptor;
 
-use crate::egui_state::EguiState;
+use crate::{egui_state::EguiState, physics::debug_collider_render_system};
 
 mod egui_state;
+mod physics;
 
 pub const ACTION_ENABLE_DEBUG: ActionId = ActionId(201);
 
@@ -41,6 +42,8 @@ impl Plugin for DebugPlugin {
             .add_trait::<flecs::Singleton>();
 
         app.register_singleton_default::<GuiState>();
+
+        debug_collider_render_system(app);
 
         app.world
             .system_named::<(&mut GuiState, &mut InputState)>("debug_inputs")

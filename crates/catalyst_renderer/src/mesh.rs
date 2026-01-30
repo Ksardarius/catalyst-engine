@@ -11,8 +11,6 @@ use wgpu::util::DeviceExt;
 
 use crate::render::RenderContext;
 
-// #[repr(C)] ensures the compiler doesn't reorder fields.
-// Pod (Plain Old Data) and Zeroable allow us to cast this struct to raw bytes safely.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct MeshUniform {
@@ -43,8 +41,6 @@ impl MeshUniform {
     }
 }
 
-// 1. The GPU-Compatible Vertex
-// #[repr(C)] ensures C-like memory layout (needed for graphics drivers)
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Vertex {

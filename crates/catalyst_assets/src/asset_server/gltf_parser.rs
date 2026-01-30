@@ -1,11 +1,10 @@
-use std::{any::Any, collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path};
 
 use catalyst_core::{
     camera::{self, Camera},
     transform::Transform,
 };
 use glam::Quat;
-use gltf::image::Format;
 
 use crate::{
     assets::{Handle, MeshData, Vertex}, material::{MaterialData, MaterialSettings, TextureData, TextureFormat}, physics::PhysicsExtras, scene::SceneData
@@ -238,7 +237,6 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
 
         // physics
         let physics = if let Some(extras) = node.extras() {
-            let a = extras.get();
             if let Ok(json) = serde_json::from_str::<PhysicsExtras>(extras.get()) {
                 Some(json)
             } else {

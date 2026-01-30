@@ -2,6 +2,7 @@ use catalyst_assets::material::{TextureData, TextureFormat};
 use catalyst_core::{
     App,
     camera::Camera,
+    physics::ColliderDefinition,
     pipeline::{PhasePresent, PhaseRender3D},
     transform::GlobalTransform,
 };
@@ -208,7 +209,8 @@ pub fn register_renderings(app: &mut App) {
         .query::<&MeshInstance>()
         .with((AssetMesh, flecs::Wildcard))
         .with((AssetMaterial, flecs::Wildcard))
-        .without(Camera::id()) // Example filter
+        .without(Camera::id())
+        .without(ColliderDefinition::id()) // Example filter
         .group_by(AssetMaterial)
         // .order_by::<Material>(|_e1, m1: &Material, _e2, m2: &Material| m1.0.cmp(&m2.0) as i32)
         .set_cached()
@@ -234,12 +236,6 @@ pub fn register_renderings(app: &mut App) {
                 let up = cam_t.0.y_axis.truncate();
 
                 let view = Mat4::look_at_rh(eye, eye + forward, up);
-
-                // let view = Mat4::look_at_rh(
-                //     cam_t.translation,                               // Eye
-                //     cam_t.translation + (cam_t.rotation * -Vec3::Z), // Target (Forward is -Z)
-                //     Vec3::Y,                                         // Up
-                // );
 
                 // B: Projection Matrix (Perspective)
                 let aspect = context.config.width as f32 / context.config.height as f32;
@@ -327,10 +323,6 @@ pub fn register_renderings(app: &mut App) {
                 context
                     .debug_lines_program
                     .record(&mut render_pass, &context.global_resources.bind_group);
-
-                // context
-                //     .debug_lines_program
-                //     .record(&mut render_pass, (&context.global_resources.bind_group));
             }
 
             context.queue.submit(std::iter::once(encoder.finish()));

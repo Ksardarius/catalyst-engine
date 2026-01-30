@@ -1,4 +1,4 @@
-use flecs_ecs::{core::flecs::PostUpdate, prelude::*};
+use flecs_ecs::prelude::*;
 use glam::{Mat4, Quat, Vec3};
 
 #[derive(Component)]
@@ -7,8 +7,6 @@ pub struct ReflectVec3 {
     x: f32,
     z: f32,
     y: f32,
-    // Note: If you use 'glam' with SIMD enabled (default), Vec3 might be 16 bytes.
-    // If your inspector values look garbled, add: _pad: f32 
 }
 
 #[derive(Component)]
@@ -18,8 +16,6 @@ pub struct ReflectVec4 {
     y: f32,
     z: f32,
     w: f32,
-    // Note: If you use 'glam' with SIMD enabled (default), Vec3 might be 16 bytes.
-    // If your inspector values look garbled, add: _pad: f32 
 }
 
 #[derive(Component)]
@@ -73,9 +69,6 @@ impl Transform {
 
     /// Makes the transform look at a target position
     pub fn looking_at(mut self, target: Vec3, up: Vec3) -> Self {
-        // We look from 'position' to 'target'
-        // Note: Mat4::look_at_rh creates a View Matrix (inverse transform).
-        // For an object Transform, we want the rotation that points -Z towards target.
         let forward = (target - self.translation).normalize();
         // Custom look_at logic for object rotation
         // Or simplified: use Mat4 to extract Quat
@@ -135,85 +128,5 @@ pub fn transform_propagation_system(world: &World) {
             } else {
                 global.0 = local.compute_matrix();
             }
-            // global.0 = parent_global.0 * local.compute_matrix();
         });
 }
-
-// pub fn transform_propagation_system(
-//     // 1. changed_roots: Roots that moved THIS frame
-//     // Roots are entities WITHOUT a 'ChildOf' component
-//     changed_roots: Query<
-//         (Entity, &Transform, Option<&Children>),
-//         (Without<ChildOf>, Changed<Transform>), // <--- CHANGED
-//     >,
-
-//     // 2. changed_children: Children who moved relative to parent THIS frame
-//     changed_local: Query<
-//         (Entity, &ChildOf, &Transform, Option<&Children>), // <--- CHANGED
-//         (With<ChildOf>, Changed<Transform>),               // <--- CHANGED
-//     >,
-
-//     // 3. Random access to read/write globals
-//     mut global_transforms: Query<&mut GlobalTransform>,
-
-//     // 4. Hierarchy query
-//     hierarchy_query: Query<(&Transform, Option<&Children>)>,
-// ) {
-//     // A. Handle Roots
-//     for (entity, transform, children) in changed_roots.iter() {
-//         let matrix = transform.compute_matrix();
-
-//         if let Ok(mut global) = global_transforms.get_mut(entity) {
-//             global.0 = matrix;
-//         }
-
-//         if let Some(children) = children {
-//             propagate_recursive(matrix, children, &hierarchy_query, &mut global_transforms);
-//         }
-//     }
-
-//     // B. Handle Children (Local Updates)
-//     for (entity, parent, transform, children) in changed_local.iter() {
-//         // 'parent' is now of type '&ChildOf'.
-//         // We use parent.get() or **parent to get the Entity ID.
-//         if let Ok(parent_global) = global_transforms.get(parent.parent()) {
-//             let parent_matrix = parent_global.0;
-//             let new_matrix = parent_matrix * transform.compute_matrix();
-
-//             if let Ok(mut global) = global_transforms.get_mut(entity) {
-//                 global.0 = new_matrix;
-//             }
-
-//             if let Some(children) = children {
-//                 propagate_recursive(
-//                     new_matrix,
-//                     children,
-//                     &hierarchy_query,
-//                     &mut global_transforms,
-//                 );
-//             }
-//         }
-//     }
-// }
-
-// // Recursive function remains mostly the same
-// fn propagate_recursive(
-//     parent_matrix: Mat4,
-//     children: &Children,
-//     hierarchy_query: &Query<(&Transform, Option<&Children>)>,
-//     global_query: &mut Query<&mut GlobalTransform>,
-// ) {
-//     for &child_entity in children {
-//         if let Ok((transform, grand_children)) = hierarchy_query.get(child_entity) {
-//             let new_matrix = parent_matrix * transform.compute_matrix();
-
-//             if let Ok(mut global) = global_query.get_mut(child_entity) {
-//                 global.0 = new_matrix;
-//             }
-
-//             if let Some(grand_children) = grand_children {
-//                 propagate_recursive(new_matrix, grand_children, hierarchy_query, global_query);
-//             }
-//         }
-//     }
-// }

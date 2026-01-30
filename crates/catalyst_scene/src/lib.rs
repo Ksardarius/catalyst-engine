@@ -15,11 +15,6 @@ pub struct ScenePlugin;
 
 impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
-        // Register the component so the ECS knows about it
-        // (Optional in some Bevy versions, but good practice for reflection)
-        // app.world.register_type::<SceneRoot>();
-
-        // Register the system that makes it work
         register_spawn_scenes(&app.world);
     }
 }
@@ -132,13 +127,13 @@ fn build_collider_shape(
         PhysicsShape::Sphere => {
             let scale = node.transform.scale;
             ColliderShape::Sphere {
-                radius: scale.max_element() * 0.5,
+                radius: scale.max_element(),
             }
         }
         PhysicsShape::Capsule => {
             let scale = node.transform.scale;
             ColliderShape::Capsule {
-                radius: (scale.x.min(scale.z)) * 0.5,
+                radius: (scale.x.min(scale.z)),
                 height: scale.y,
             }
         }

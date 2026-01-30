@@ -49,7 +49,7 @@ pub fn prepare_physics_system(app: &catalyst_core::App) {
                     b.set_angular_damping(rb_def.angular_damping);
                     b.set_gravity_scale(rb_def.gravity_scale, true);
 
-                    let iso = global_to_iso(&transform.0);
+                    let iso = mat_to_iso(&transform.0);
                     b.set_position(iso, true);
                 }
             } else {
@@ -115,7 +115,7 @@ pub fn prepare_physics_system(app: &catalyst_core::App) {
                         c.set_collision_groups(groups);
 
                         // Update local offset
-                        let iso = global_to_iso(&local_transform.compute_matrix());
+                        let iso = mat_to_iso(&local_transform.compute_matrix());
                         c.set_position_wrt_parent(iso);
                     }
                 } else {
@@ -129,7 +129,7 @@ pub fn prepare_physics_system(app: &catalyst_core::App) {
                         // catalyst_core::physics::ColliderShape::Mesh { vertices, indices } => ColliderBuilder::trimesh( vertices.iter().map(|v| v.into()).collect(), indices.chunks(3).map(|c| [c[0], c[1], c[2]]).collect(), ), 
                     };
 
-                    let iso = global_to_iso(&local_transform.compute_matrix());
+                    let iso = mat_to_iso(&local_transform.compute_matrix());
                     let mut collider = builder.collision_groups(InteractionGroups::new(
                             Group::from_bits(col_def.layer).unwrap(),
                             Group::from_bits(col_def.mask).unwrap(),
@@ -154,7 +154,7 @@ pub fn prepare_physics_system(app: &catalyst_core::App) {
         );
 }
 
-fn global_to_iso(gt: &Mat4) -> Pose3 {
-    let (translation, rotation, _) = gt.to_scale_rotation_translation();
+fn mat_to_iso(gt: &Mat4) -> Pose3 {
+    let (_, rotation, translation) = gt.to_scale_rotation_translation();
     Isometry::from_parts(Translation::from(translation), rotation.into()).into()
 }

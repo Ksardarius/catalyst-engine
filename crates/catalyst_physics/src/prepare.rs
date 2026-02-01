@@ -90,13 +90,25 @@ pub fn prepare_physics_system(app: &catalyst_core::App) {
             Option<&PhysicsMaterialDefinition>,
             Option<&PhysicsHandle>,
             &PhysicsHandle,
+            Option<&GlobalTransform>,
             &mut PhysicsWorld,
         )>("prepare_physic_coliders")
         .kind(PhysicsPrepare)
         .term_at(4)
         .parent()
+        .term_at(5)
+        .parent()
         .each_entity(
-            |entity, (local_transform, col_def, mat_def, collider_handle, parent_handle, physics)| {
+            |entity,
+             (
+                local_transform,
+                col_def,
+                mat_def,
+                collider_handle,
+                parent_handle,
+                parent_transform,
+                physics,
+            )| {
                 if let Some(handle) = collider_handle {
                     let collider = handle.collider.and_then(|c| physics.colliders.get_mut(c));
                     if let Some(c) = collider {
@@ -119,29 +131,50 @@ pub fn prepare_physics_system(app: &catalyst_core::App) {
                         c.set_position_wrt_parent(iso);
                     }
                 } else {
-                    // Build collider shape 
-                    let builder = match &col_def.shape { 
-                        catalyst_core::physics::ColliderShape::Box { hx, hy, hz } => ColliderBuilder::cuboid(*hx, *hy, *hz), 
-                        catalyst_core::physics::ColliderShape::Sphere { radius } => ColliderBuilder::ball(*radius), 
-                        catalyst_core::physics::ColliderShape::Capsule { radius, height } => ColliderBuilder::capsule_y(*height * 0.5, *radius), 
-                        _ => todo!("Convex and Mesh shapes not supported")
-                        // catalyst_core::physics::ColliderShape::Convex { vertices } => ColliderBuilder::convex_hull( &vertices.iter().map(|v| v.into()).collect::<Vec<_>>() ).unwrap(), 
-                        // catalyst_core::physics::ColliderShape::Mesh { vertices, indices } => ColliderBuilder::trimesh( vertices.iter().map(|v| v.into()).collect(), indices.chunks(3).map(|c| [c[0], c[1], c[2]]).collect(), ), 
+                    let global_scale = parent_transform
+                        .map(|s| s.to_scale_rotation_translation().0)
+                        .unwrap_or(Vec3::from_array([1f32, 1f32, 1f32]));
+
+                    // Build collider shape
+                    let builder = match &col_def.shape {
+                        catalyst_core::physics::ColliderShape::Box { hx, hy, hz } => {
+                            ColliderBuilder::cuboid(
+                                *hx * global_scale.x,
+                                *hy * global_scale.y,
+                                *hz * global_scale.z,
+                            )
+                        }
+                        catalyst_core::physics::ColliderShape::Sphere { radius } => {
+                            ColliderBuilder::ball(*radius)
+                        }
+                        catalyst_core::physics::ColliderShape::Capsule { radius, height } => {
+                            ColliderBuilder::capsule_y(*height * 0.5, *radius)
+                        }
+                        _ => todo!("Convex and Mesh shapes not supported"), // catalyst_core::physics::ColliderShape::Convex { vertices } => ColliderBuilder::convex_hull( &vertices.iter().map(|v| v.into()).collect::<Vec<_>>() ).unwrap(),
+                                                                            // catalyst_core::physics::ColliderShape::Mesh { vertices, indices } => ColliderBuilder::trimesh( vertices.iter().map(|v| v.into()).collect(), indices.chunks(3).map(|c| [c[0], c[1], c[2]]).collect(), ),
                     };
 
                     let iso = mat_to_iso(&local_transform.compute_matrix());
-                    let mut collider = builder.collision_groups(InteractionGroups::new(
+                    let mut collider = builder
+                        .collision_groups(InteractionGroups::new(
                             Group::from_bits(col_def.layer).unwrap(),
                             Group::from_bits(col_def.mask).unwrap(),
                             InteractionTestMode::default(),
-                        )).sensor(col_def.is_trigger).position(iso).build();
+                        ))
+                        .sensor(col_def.is_trigger)
+                        .position(iso)
+                        .build();
 
                     if let Some(mat) = mat_def {
                         collider.set_friction(mat.friction);
                         collider.set_restitution(mat.restitution);
                     }
 
-                    let collider_handle = physics.colliders.insert_with_parent( collider, parent_handle.body.unwrap(), &mut physics.bodies, );
+                    let collider_handle = physics.colliders.insert_with_parent(
+                        collider,
+                        parent_handle.body.unwrap(),
+                        &mut physics.bodies,
+                    );
 
                     entity.add(PhysicsColliderAdded);
 

@@ -135,7 +135,7 @@ fn setup_scene(world: &World) {
     world.get::<&AssetServer>(|asset_server| {
         println!("Requesting Mesh Load...");
 
-        let scene_handle = asset_server.load_scene("assets/box5.glb");
+        let scene_handle = asset_server.load_scene("assets/simple15.glb");
         world
             .entity()
             .set(SceneRoot(scene_handle.clone()))

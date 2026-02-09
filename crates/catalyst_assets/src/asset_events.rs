@@ -4,7 +4,7 @@ use catalyst_core::Source;
 use flecs_ecs::prelude::*;
 use uuid::Uuid;
 
-use crate::{AssetReceiver, asset_server::AssetWorkerMessage};
+use crate::{AssetReceiver, LoadScene, Loading, asset_server::AssetWorkerMessage};
 
 #[derive(Component, Default)]
 pub struct AssetLookup {
@@ -59,7 +59,7 @@ pub fn register_flush_system(world: &World) {
                                 world.entity_from_id(entity).set_name(&path).set(data);
                             }
                             AssetWorkerMessage::SceneLoaded {
-                                id,
+                                entity,
                                 path,
                                 scene,
                                 textures: loaded_textures,
@@ -68,12 +68,13 @@ pub fn register_flush_system(world: &World) {
                             } => {
                                 println!("  [AssetPlugin] Offloaded Scene: {:?}", path);
 
-                                let entity = lookup.entity(id, &world);
+                                // let entity = lookup.entity(id, &world);
                                 let scene_entity = world
                                     .entity_from_id(entity)
-                                    .set_name(&path)
                                     .set(scene)
-                                    .add((AssetType, SceneAsset));
+                                    .add((AssetType, SceneAsset))
+                                    .remove(Loading)
+                                    .remove(LoadScene);
 
                                 // 1. Unpack & Store Textures
                                 for (handle, data) in loaded_textures {

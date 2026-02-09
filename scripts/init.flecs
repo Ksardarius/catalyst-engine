@@ -1,0 +1,36 @@
+using flecs.meta
+using catalyst_core
+using catalyst_assets
+ 
+struct MaxSpeed {
+  value = f32
+}
+ 
+struct Position {
+  x = f32
+  y = f32
+}
+ 
+prefab SpaceShip {
+  MaxSpeed: {value: 100}
+ 
+  cockpit {
+    Position: {x: -10, y: 0}
+  }
+}
+ 
+my_spaceship : SpaceShip {
+  Position: {x: 10, y: 20}
+}
+
+AssetSource simple15(path: "assets/simple15.glb") {
+    LoadScene
+    catalyst_core.transform.Transform
+    catalyst_core.transform.GlobalTransform
+}
+
+AssetSource simple16(path: "assets/simple15.glb") {
+    LoadScene
+    catalyst_core.transform.Transform
+    catalyst_core.transform.GlobalTransform
+}

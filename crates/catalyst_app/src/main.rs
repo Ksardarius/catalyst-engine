@@ -14,12 +14,10 @@ use catalyst_input::{
 };
 use catalyst_physics::PhysicsPlugin;
 use catalyst_renderer::RenderPlugin;
-use catalyst_scene::{ScenePlugin, SceneRoot};
+use catalyst_scene::{ScenePlugin};
 use catalyst_window::{WindowPlugin, run_catalyst_app};
 use flecs_ecs::{
-    addons::stats,
-    core::{World, WorldGet, flecs},
-    prelude::{ComponentId, QueryBuilderImpl, SystemAPI},
+    addons::stats, core::{World, WorldGet, flecs}, macros::Component, prelude::{ComponentId, QueryBuilderImpl, SystemAPI}
 };
 use glam::{Mat4, Quat, Vec3};
 
@@ -34,6 +32,9 @@ pub const AXIS_LOOK_Y: AxisId = AxisId(101);
 fn main() {
     let mut app = App::new();
 
+    
+
+
     app.add_plugin(InputPlugin);
     app.add_plugin(WindowPlugin);
     app.add_plugin(AssetPlugin);
@@ -43,6 +44,8 @@ fn main() {
 
     // debug plugin must be last
     app.add_plugin(DebugPlugin);
+
+    app.world.script().build_from_file("scripts/init.flecs");
 
     app.world
         .system::<&mut AssetServer>()
@@ -135,12 +138,17 @@ fn setup_scene(world: &World) {
     world.get::<&AssetServer>(|asset_server| {
         println!("Requesting Mesh Load...");
 
-        let scene_handle = asset_server.load_scene("assets/simple15.glb");
-        world
-            .entity()
-            .set(SceneRoot(scene_handle.clone()))
-            .set(Transform::from_xyz(0.0, 0.0, 0.0))
-            .set(GlobalTransform::default());
+    // world.script().build_from_file("scripts/init.flecs");
+
+
+       let cubemap_handle = asset_server.load_cubemap("assets/skybox_puresky_4k.exr");
+
+        // let scene_handle = asset_server.load_scene("assets/simple15.glb");
+        // world
+        //     .entity()
+        //     .set(SceneRoot(scene_handle.clone()))
+        //     .set(Transform::from_xyz(0.0, 0.0, 0.0))
+        //     .set(GlobalTransform::default());
 
         world.get::<&mut InputState>(|input_state| {
             input_state.push_context(CTX_GAMEPLAY);

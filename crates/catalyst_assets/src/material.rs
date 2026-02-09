@@ -6,13 +6,19 @@ pub enum TextureFormat {
     Rgba8Unorm, // Standard 32-bit color (0-255)
     Rgba8UnormSrgb, // Standard 32-bit color (0-255)
     Rgba32Float, // HDR data
-    Gray8,      // Grayscale (used for Roughness/Metallic masks)
+    Gray8,
+}
+
+#[derive(Clone, Debug)]
+pub enum TextureType {
+    LDR(Vec<u8>),
+    HDR(Vec<f32>)
 }
 
 #[derive(Component, Clone, Debug)]
 pub struct TextureData {
     pub name: String,
-    pub pixels: Vec<u8>,
+    pub pixels: TextureType,
     pub width: u32,
     pub height: u32,
     pub format: TextureFormat, // e.g., Rgba8Unorm

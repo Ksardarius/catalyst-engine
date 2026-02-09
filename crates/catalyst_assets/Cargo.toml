@@ -9,6 +9,7 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 uuid = { workspace = true }
 image = "0.25"
+exr = "1.72"
 gltf = { version = "1.0", features = ["names", "extras"]}
 glam = { workspace = true }
 catalyst_core = { workspace = true }

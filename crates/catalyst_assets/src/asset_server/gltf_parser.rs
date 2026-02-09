@@ -7,7 +7,10 @@ use catalyst_core::{
 use glam::Quat;
 
 use crate::{
-    assets::{Handle, MeshData, Vertex}, material::{MaterialData, MaterialSettings, TextureData, TextureFormat}, physics::PhysicsExtras, scene::SceneData
+    assets::{Handle, MeshData, Vertex},
+    material::{MaterialData, MaterialSettings, TextureData, TextureFormat},
+    physics::PhysicsExtras,
+    scene::SceneData,
 };
 
 type GltfPayload = (
@@ -53,7 +56,7 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
                     name: name.to_string(),
                     width,
                     height,
-                    pixels,
+                    pixels: crate::material::TextureType::LDR(pixels),
                     format: TextureFormat::Rgba8Unorm,
                 };
 
@@ -253,7 +256,7 @@ pub fn parse_gltf(path: &str) -> Result<GltfPayload, String> {
             material_index,
             camera_index,
             children: node.children().map(|c| c.index()).collect(),
-            physics
+            physics,
         });
     }
 

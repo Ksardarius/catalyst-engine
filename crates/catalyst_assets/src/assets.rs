@@ -5,6 +5,30 @@ use uuid::Uuid;
 
 use crate::asset_events::AssetLookup;
 
+#[derive(Debug)]
+pub struct EntityHandle<T> {
+    pub entity: Entity,
+    marker: PhantomData<T>,
+} 
+
+impl<T> EntityHandle<T> {
+    pub fn new(entity: Entity) -> Self {
+        Self {
+            entity,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<T> Clone for EntityHandle<T> {
+    fn clone(&self) -> Self {
+        Self {
+            entity: self.entity,
+            marker: PhantomData,
+        }
+    }
+}
+
 // 1. The ID (Handle)
 // It's just a unique number. Efficient to copy.
 #[derive(Debug)]

@@ -57,6 +57,7 @@ impl App {
             .unwrap();
 
         let mut world = World::new();
+        world.component::<Source>();
         world
             .component::<IoTaskPool>()
             .add_trait::<flecs::Singleton>()

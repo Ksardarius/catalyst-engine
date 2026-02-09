@@ -1,14 +1,17 @@
-use flecs_ecs::macros::Component;
+use std::result;
+
+use flecs_ecs::{core::Entity, macros::Component};
 use tokio::sync::mpsc::UnboundedSender;
 use uuid::Uuid;
 
 use crate::{
-    assets::{Handle, MeshData},
-    material::{MaterialData, TextureData, TextureFormat},
+    assets::{EntityHandle, Handle, MeshData},
+    material::{MaterialData, TextureData, TextureFormat, TextureType},
     scene::SceneData,
 };
 use tokio::runtime::Handle as TokioHandle;
 
+mod exr_parser;
 mod gltf_parser;
 
 // Internal Message (Heavy - Used only inside the plugin)
@@ -19,7 +22,7 @@ pub enum AssetWorkerMessage {
         data: TextureData,
     },
     SceneLoaded {
-        id: Uuid,
+        entity: Entity,
         path: String,
         // The Payload:
         scene: SceneData,
@@ -65,7 +68,7 @@ impl AssetServer {
                     name: path_clone.clone(),
                     width: rgba.width(),
                     height: rgba.height(),
-                    pixels: rgba.into_raw(),
+                    pixels: TextureType::LDR(rgba.into_raw()),
                     format: TextureFormat::Rgba8Unorm, // Use sRGB for colors!
                 })
             })
@@ -82,9 +85,43 @@ impl AssetServer {
         handle
     }
 
-    pub fn load_scene(&self, path: &str) -> Handle<SceneData> {
-        let handle = Handle::<SceneData>::new();
+    pub fn load_cubemap(&self, path: &str) -> Handle<TextureData> {
+        let handle = Handle::<TextureData>::new();
         let id = handle.id;
+        let path = path.to_owned();
+        let sender = self.event_sender.clone();
+
+        self.io_handle.spawn(async move {
+            let path_clone = path.clone();
+
+            let result =
+                tokio::task::spawn_blocking(move || exr_parser::parse_exr(&path_clone, 1024)).await; // 2048 for 8K image
+
+            match result {
+                Ok(Ok((pixels, width, height))) => {
+                    let _ = sender.send(AssetWorkerMessage::TextureLoaded {
+                        id,
+                        path,
+                        data: TextureData {
+                            name: "".to_string(),
+                            pixels: TextureType::HDR(pixels),
+                            width,
+                            height,
+                            format: TextureFormat::Rgba32Float,
+                        },
+                    });
+                }
+                Err(e) => eprintln!("Exr Task Error: {:?}", e),
+                Ok(Err(e)) => eprintln!("Failed to parse Exr '{}': {}", path, e),
+            };
+        });
+
+        handle
+    }
+
+    pub fn load_scene(&self, path: &str, entity: Entity) -> EntityHandle<SceneData> {
+        let handle = EntityHandle::<SceneData>::new(entity);
+        // let id = handle.id;
         let path = path.to_owned();
         let sender = self.event_sender.clone();
 
@@ -92,13 +129,14 @@ impl AssetServer {
         self.io_handle.spawn(async move {
             let path_clone = path.clone();
             // Run blocking parser
-            let result = tokio::task::spawn_blocking(move || gltf_parser::parse_gltf(&path_clone)).await;
+            let result =
+                tokio::task::spawn_blocking(move || gltf_parser::parse_gltf(&path_clone)).await;
 
             match result {
                 Ok(Ok(payload)) => {
                     // Send the "Big Payload" back to main thread
                     let _ = sender.send(AssetWorkerMessage::SceneLoaded {
-                        id,
+                        entity,
                         path,
                         scene: payload.0,
                         textures: payload.1,

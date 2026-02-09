@@ -1,4 +1,4 @@
-use catalyst_assets::material::{TextureData, TextureFormat};
+use catalyst_assets::material::{TextureData, TextureFormat, TextureType};
 use catalyst_core::{
     App,
     camera::Camera,
@@ -160,7 +160,7 @@ pub fn register_renderings(app: &mut App) {
                             width: 1,
                             height: 1,
                             // RGBA: (255, 255, 255, 255) -> Solid White
-                            pixels: vec![0, 111, 255, 255],
+                            pixels: TextureType::LDR(vec![0, 111, 255, 255]),
                             format: TextureFormat::Rgba8Unorm,
                         },
                         Some("Default White Texture"),

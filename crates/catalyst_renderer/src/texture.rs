@@ -1,5 +1,6 @@
 use catalyst_assets::material::TextureData;
 use flecs_ecs::prelude::*;
+use half::f16;
 use wgpu::{
     Device, Extent3d, SurfaceConfiguration, TextureDescriptor, TextureDimension, TextureFormat,
     TextureUsages,
@@ -25,53 +26,105 @@ impl GpuTexture {
             catalyst_assets::material::TextureFormat::Rgba8UnormSrgb => {
                 wgpu::TextureFormat::Rgba8UnormSrgb
             }
-            catalyst_assets::material::TextureFormat::Rgba8Unorm => {
-                wgpu::TextureFormat::Rgba8Unorm
-            }
+            catalyst_assets::material::TextureFormat::Rgba8Unorm => wgpu::TextureFormat::Rgba8Unorm,
             catalyst_assets::material::TextureFormat::Rgba32Float => {
-                wgpu::TextureFormat::Rgba32Float
+                // Rgba32Float not supported by some GPU, MUST be converted to f16
+                wgpu::TextureFormat::Rgba16Float
             }
             catalyst_assets::material::TextureFormat::Gray8 => wgpu::TextureFormat::R8Unorm,
         };
 
-        let size = wgpu::Extent3d {
-            width: data.width,
-            height: data.height,
-            depth_or_array_layers: 1,
+        let (texture, view) = match &data.pixels {
+            catalyst_assets::material::TextureType::LDR(pixels) => {
+                let size = wgpu::Extent3d {
+                    width: data.width,
+                    height: data.height,
+                    depth_or_array_layers: 1,
+                };
+
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label,
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu_format, // Use the translated format
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+
+                // 2. Upload Pixels
+                queue.write_texture(
+                    // RENAMED: ImageCopyTexture -> TexelCopyTextureInfo
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    pixels,
+                    // RENAMED: ImageDataLayout -> TexelCopyBufferLayout
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * data.width),
+                        rows_per_image: Some(data.height),
+                    },
+                    size,
+                );
+
+                        // 3. Create View (How the shader sees it)
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+                (texture, view)
+            }
+            catalyst_assets::material::TextureType::HDR(pixels) => {
+                let data_f16: Vec<u16> = pixels
+                    .iter()
+                    .map(|&val| f16::from_f32(val).to_bits())
+                    .collect();
+
+                let size = wgpu::Extent3d {
+                    width: data.width,
+                    height: data.height,
+                    depth_or_array_layers: 6,
+                };
+
+                let texture = device.create_texture(&wgpu::TextureDescriptor {
+                    label,
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu_format, // Use the translated format
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+
+                // 3. Upload Data (Cast f32 buffer to u8 bytes)
+                queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    bytemuck::cast_slice(&data_f16),
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(8 * data.width), // 4 floats * 2 bytes = 8 bytes per pixel
+                        rows_per_image: Some(data.height),
+                    },
+                    size,
+                );
+
+                let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::Cube),
+                    ..Default::default()
+                });
+
+                (texture, view)
+            }
         };
-
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label,
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu_format, // Use the translated format
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-
-        // 2. Upload Pixels
-        queue.write_texture(
-            // RENAMED: ImageCopyTexture -> TexelCopyTextureInfo
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            &data.pixels,
-            // RENAMED: ImageDataLayout -> TexelCopyBufferLayout
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * data.width),
-                rows_per_image: Some(data.height),
-            },
-            size,
-        );
-
-        // 3. Create View (How the shader sees it)
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         // 4. Create Sampler (How to filter pixels - Linear/Nearest)
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {

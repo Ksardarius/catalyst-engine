@@ -517,6 +517,7 @@ name = "catalyst_assets"
 version = "0.1.0"
 dependencies = [
  "catalyst_core",
+ "exr",
  "flecs_ecs",
  "glam 0.30.9",
  "gltf",
@@ -592,6 +593,7 @@ dependencies = [
  "catalyst_window",
  "flecs_ecs",
  "glam 0.30.9",
+ "half",
  "log",
  "pollster",
  "uuid",

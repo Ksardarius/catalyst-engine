@@ -1,25 +1,24 @@
 use catalyst_input::{
-    context::{CTX_DEBUG, CTX_GAMEPLAY}, logical::{ActionId}, physical::InputState
+    context::{CTX_DEBUG, CTX_GAMEPLAY},
+    logical::ActionId,
+    physical::InputState,
 };
 use flecs_ecs::prelude::*;
 use winit::window::CursorGrabMode;
 
-use catalyst_core::{
-    App,
-    Plugin,
-    SystemEvents,
-    pipeline::PhaseRenderGUI,
-};
+use catalyst_core::{App, Plugin, SystemEvents, pipeline::PhaseRenderGUI};
 use catalyst_renderer::{GpuTexture, RenderContext, RenderTarget};
 use catalyst_window::MainWindow;
 use egui_wgpu::ScreenDescriptor;
 use wgpu::CommandEncoderDescriptor;
 
-use crate::{egui_state::EguiState, greed::debug_greed_system, physics::debug_collider_render_system};
+use crate::{
+    egui_state::EguiState, greed::debug_greed_system, physics::debug_collider_render_system,
+};
 
 mod egui_state;
-mod physics;
 mod greed;
+mod physics;
 
 pub const ACTION_ENABLE_DEBUG: ActionId = ActionId(201);
 
@@ -95,13 +94,15 @@ impl Plugin for DebugPlugin {
         app.world
             .observer::<flecs::OnSet, (&GpuTexture, &mut EguiState, &RenderContext)>()
             .each_entity(|entity, (texture, egui_state, context)| {
-                let teture_handle = egui_state.renderer.register_native_texture(
-                    &context.device,
-                    &texture.view,
-                    wgpu::FilterMode::Linear,
-                );
+                if texture.texture.size().depth_or_array_layers == 1 {
+                    let teture_handle = egui_state.renderer.register_native_texture(
+                        &context.device,
+                        &texture.view,
+                        wgpu::FilterMode::Linear,
+                    );
 
-                entity.set(DebugTexture(teture_handle));
+                    entity.set(DebugTexture(teture_handle));
+                }
             });
 
         let textures_to_debug = app

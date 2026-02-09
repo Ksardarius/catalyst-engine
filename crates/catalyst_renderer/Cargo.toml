@@ -16,3 +16,4 @@ uuid = { workspace = true }
 # We need async executor to init the adapter
 pollster = "0.4"
 bytemuck = "1.24"
+half = "2.7.1"
